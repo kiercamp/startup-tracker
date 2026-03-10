@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:open.gsa.gov)",
+      "WebFetch(domain:api.usaspending.gov)",
+      "WebFetch(domain:www.sbir.gov)",
+      "WebFetch(domain:govconapi.com)",
+      "WebFetch(domain:sandbox-api.usaspending.gov)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:api.www.sbir.gov)",
+      "Bash(pip install -r requirements.txt --break-system-packages)",
+      "Bash(python3 -m pip install -r /Users/kierancampbell/startup_tracker/requirements.txt --break-system-packages)",
+      "Bash(python3 -m pip install -r /Users/kierancampbell/startup_tracker/requirements.txt)",
+      "Bash(python3 -m pytest tests/test_prospect.py -v)",
+      "Bash(python3 -m pytest tests/test_config.py -v)",
+      "Bash(python3 -m pytest tests/test_utils.py -v)",
+      "Bash(python3 -m pytest tests/test_sam_gov.py -v)",
+      "Bash(python3 -m pytest tests/test_usa_spending.py -v)",
+      "Bash(python3 -m pytest tests/test_sbir.py -v)",
+      "Bash(python3 -m pytest tests/test_vc_funding.py -v)",
+      "Bash(python3 -m pytest tests/test_company_profile.py -v)",
+      "Bash(python3 -m pytest tests/test_exporter.py -v)",
+      "Bash(python3 main.py --dry-run)",
+      "Bash(python3 -m pytest tests/ -v)",
+      "Bash(python3 -m ruff check /Users/kierancampbell/startup_tracker/prospect_engine/ /Users/kierancampbell/startup_tracker/tests/ /Users/kierancampbell/startup_tracker/main.py)",
+      "Bash(python3 -m black --check /Users/kierancampbell/startup_tracker/prospect_engine/ /Users/kierancampbell/startup_tracker/tests/ /Users/kierancampbell/startup_tracker/main.py)",
+      "Bash(python3 -m black /Users/kierancampbell/startup_tracker/prospect_engine/ /Users/kierancampbell/startup_tracker/tests/ /Users/kierancampbell/startup_tracker/main.py)",
+      "Bash(gh auth status)",
+      "Bash(git init)",
+      "Bash(git add -A)"
+    ]
+  }
+}
