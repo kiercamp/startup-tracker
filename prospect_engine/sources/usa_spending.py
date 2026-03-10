@@ -131,6 +131,8 @@ def _build_request_body(
             "Awarding Sub Agency",
             "NAICS Code",
             "NAICS Description",
+            "internal_id",
+            "generated_internal_id",
         ],
         "page": page,
         "limit": limit,
@@ -165,6 +167,16 @@ def _parse_result(raw: Dict[str, Any]) -> Optional[ContractAward]:
             except (ValueError, TypeError):
                 pass
 
+        # Build source URL from internal award ID
+        internal_id = raw.get("internal_id", "") or raw.get("generated_internal_id", "")
+        source_url = ""
+        if internal_id:
+            source_url = "https://www.usaspending.gov/award/{}".format(internal_id)
+        elif award_id:
+            source_url = "https://www.usaspending.gov/search/?keyword={}".format(
+                award_id
+            )
+
         return ContractAward(
             award_id=award_id,
             source="usa_spending",
@@ -174,6 +186,7 @@ def _parse_result(raw: Dict[str, Any]) -> Optional[ContractAward]:
             signed_date=signed_date,
             obligation_amount=obligation,
             description=raw.get("NAICS Description", ""),
+            source_url=source_url,
         )
     except Exception:
         logger.exception("Failed to parse USASpending result")

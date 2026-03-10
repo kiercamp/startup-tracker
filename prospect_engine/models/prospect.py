@@ -20,6 +20,7 @@ class ContractAward:
     obligation_amount: float
     description: str = ""
     piid: str = ""
+    source_url: str = ""
 
 
 @dataclass
@@ -38,6 +39,7 @@ class SbirAward:
     city: str
     abstract: str = ""
     uei: str = ""
+    source_url: str = ""
 
 
 @dataclass
@@ -51,6 +53,7 @@ class VcRound:
     announced_date: Optional[date]
     lead_investor: str = ""
     source: str = "stub"
+    source_url: str = ""
 
 
 @dataclass

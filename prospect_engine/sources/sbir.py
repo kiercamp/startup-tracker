@@ -185,6 +185,11 @@ def _parse_award(raw: Dict[str, Any]) -> Optional[SbirAward]:
             uei or firm[:10], raw.get("award_year", ""), phase
         )
 
+        # Build source URL — link to sbir.gov search for this firm
+        source_url = "https://www.sbir.gov/sbirsearch/detail/{}".format(
+            raw.get("award_id", award_id)
+        )
+
         return SbirAward(
             award_id=award_id,
             firm=firm,
@@ -198,6 +203,7 @@ def _parse_award(raw: Dict[str, Any]) -> Optional[SbirAward]:
             city=raw.get("city", ""),
             abstract=raw.get("abstract", ""),
             uei=uei,
+            source_url=source_url,
         )
     except Exception:
         logger.exception("Failed to parse SBIR award")

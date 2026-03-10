@@ -167,6 +167,11 @@ def _parse_award(raw: Dict[str, Any]) -> Optional[ContractAward]:
         naics_code = str(contract_data.get("naicsCode", ""))
         award_id = raw.get("contractId", {}).get("piid", "") or str(id(raw))
 
+        piid = raw.get("contractId", {}).get("piid", "")
+        source_url = ""
+        if piid:
+            source_url = "https://sam.gov/opp/{}/view".format(piid)
+
         return ContractAward(
             award_id=award_id,
             source="sam_gov",
@@ -176,7 +181,8 @@ def _parse_award(raw: Dict[str, Any]) -> Optional[ContractAward]:
             signed_date=signed_date,
             obligation_amount=obligation,
             description=contract_data.get("descriptionOfRequirement", ""),
-            piid=raw.get("contractId", {}).get("piid", ""),
+            piid=piid,
+            source_url=source_url,
         )
     except Exception:
         logger.exception("Failed to parse SAM.gov award")

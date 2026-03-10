@@ -188,6 +188,7 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             obligation_amount REAL,
             description TEXT,
             piid TEXT,
+            source_url TEXT,
             PRIMARY KEY (award_id, prospect_name),
             FOREIGN KEY (prospect_name) REFERENCES prospects(company_name)
         );
@@ -206,6 +207,7 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             city TEXT,
             abstract TEXT,
             uei TEXT,
+            source_url TEXT,
             PRIMARY KEY (award_id, prospect_name),
             FOREIGN KEY (prospect_name) REFERENCES prospects(company_name)
         );
@@ -219,6 +221,7 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             announced_date TEXT,
             lead_investor TEXT,
             source TEXT,
+            source_url TEXT,
             PRIMARY KEY (round_id, prospect_name),
             FOREIGN KEY (prospect_name) REFERENCES prospects(company_name)
         );
@@ -262,7 +265,7 @@ def _upsert_prospect(conn: sqlite3.Connection, p: Prospect) -> None:
     )
     for a in p.contract_awards:
         conn.execute(
-            "INSERT OR REPLACE INTO contract_awards VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO contract_awards VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 a.award_id,
                 p.company_name,
@@ -274,13 +277,14 @@ def _upsert_prospect(conn: sqlite3.Connection, p: Prospect) -> None:
                 a.obligation_amount,
                 a.description,
                 a.piid,
+                a.source_url,
             ),
         )
 
     conn.execute("DELETE FROM sbir_awards WHERE prospect_name = ?", (p.company_name,))
     for a in p.sbir_awards:
         conn.execute(
-            "INSERT OR REPLACE INTO sbir_awards VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO sbir_awards VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 a.award_id,
                 p.company_name,
@@ -295,13 +299,14 @@ def _upsert_prospect(conn: sqlite3.Connection, p: Prospect) -> None:
                 a.city,
                 a.abstract,
                 a.uei,
+                a.source_url,
             ),
         )
 
     conn.execute("DELETE FROM vc_rounds WHERE prospect_name = ?", (p.company_name,))
     for r in p.vc_rounds:
         conn.execute(
-            "INSERT OR REPLACE INTO vc_rounds VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO vc_rounds VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 r.round_id,
                 p.company_name,
@@ -311,6 +316,7 @@ def _upsert_prospect(conn: sqlite3.Connection, p: Prospect) -> None:
                 r.announced_date.isoformat() if r.announced_date else None,
                 r.lead_investor,
                 r.source,
+                r.source_url,
             ),
         )
 
