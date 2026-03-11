@@ -12,7 +12,12 @@ from prospect_engine.models.prospect import (
     VcRound,
     Prospect,
 )
-from prospect_engine.output.exporter import export_csv, export_json, export_sqlite
+from prospect_engine.output.exporter import (
+    export_csv,
+    export_json,
+    export_sqlite,
+    export_seed_snapshot,
+)
 
 
 def _make_prospect() -> Prospect:
@@ -156,3 +161,33 @@ def test_export_csv_multiple(tmp_path: Path):
         rows = list(reader)
 
     assert len(rows) == 2
+
+
+def test_export_seed_snapshot(tmp_path: Path):
+    """Seed snapshot matches the format expected by streamlit_app.py."""
+    p = _make_prospect()
+    snap_path = tmp_path / "snapshot.json"
+
+    result = export_seed_snapshot(
+        [p],
+        output_path=snap_path,
+        status_messages=["SAM.gov: 1 companies, 1 awards"],
+    )
+    assert result == snap_path
+    assert snap_path.exists()
+
+    with open(snap_path, "r") as f:
+        data = json.load(f)
+
+    # Must have the snapshot envelope
+    assert "collected_at" in data
+    assert "prospects" in data
+    assert "status" in data
+
+    # Prospects match the same format as export_json
+    assert len(data["prospects"]) == 1
+    assert data["prospects"][0]["company_name"] == "Test Aerospace"
+    assert len(data["prospects"][0]["contract_awards"]) == 1
+
+    # Status preserved
+    assert data["status"] == ["SAM.gov: 1 companies, 1 awards"]

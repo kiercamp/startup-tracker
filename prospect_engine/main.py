@@ -23,7 +23,12 @@ from prospect_engine.enrichment.company_profile import (
     build_outreach_flags,
     filter_by_founded_year,
 )
-from prospect_engine.output.exporter import export_csv, export_json, export_sqlite
+from prospect_engine.output.exporter import (
+    export_csv,
+    export_json,
+    export_sqlite,
+    export_seed_snapshot,
+)
 from prospect_engine.config import EXISTING_PIPELINE
 
 console = Console()
@@ -64,16 +69,22 @@ def run_pipeline(
     console.print("[dim]Fetching funding signals...[/dim]\n")
 
     source_results = []
+    status_messages = []
 
     # SAM.gov
     console.print("  [yellow]SAM.gov[/yellow] contract awards...", end=" ")
     try:
         sam_results = sam_gov.fetch(states=states)
         source_results.append(sam_results)
-        console.print("[green]{} companies[/green]".format(len(sam_results)))
+        n_awards = sum(len(p.contract_awards) for p in sam_results)
+        msg = "SAM.gov: {} companies, {} awards".format(len(sam_results), n_awards)
+        console.print("[green]{}[/green]".format(msg))
+        status_messages.append(msg)
     except Exception as exc:
         source_results.append([])
-        console.print("[red]failed: {}[/red]".format(str(exc)[:80]))
+        msg = "SAM.gov: failed ({})".format(str(exc)[:80])
+        console.print("[red]{}[/red]".format(msg))
+        status_messages.append(msg)
         logger.error("SAM.gov fetch failed: %s", exc)
 
     # USASpending
@@ -81,10 +92,15 @@ def run_pipeline(
     try:
         usa_results = usa_spending.fetch(states=states)
         source_results.append(usa_results)
-        console.print("[green]{} companies[/green]".format(len(usa_results)))
+        n_awards = sum(len(p.contract_awards) for p in usa_results)
+        msg = "USASpending: {} companies, {} awards".format(len(usa_results), n_awards)
+        console.print("[green]{}[/green]".format(msg))
+        status_messages.append(msg)
     except Exception as exc:
         source_results.append([])
-        console.print("[red]failed: {}[/red]".format(str(exc)[:80]))
+        msg = "USASpending: failed ({})".format(str(exc)[:80])
+        console.print("[red]{}[/red]".format(msg))
+        status_messages.append(msg)
         logger.error("USASpending fetch failed: %s", exc)
 
     # SBIR
@@ -92,10 +108,15 @@ def run_pipeline(
     try:
         sbir_results = sbir.fetch(states=states)
         source_results.append(sbir_results)
-        console.print("[green]{} companies[/green]".format(len(sbir_results)))
+        n_awards = sum(len(p.sbir_awards) for p in sbir_results)
+        msg = "SBIR: {} companies, {} awards".format(len(sbir_results), n_awards)
+        console.print("[green]{}[/green]".format(msg))
+        status_messages.append(msg)
     except Exception as exc:
         source_results.append([])
-        console.print("[red]failed: {}[/red]".format(str(exc)[:80]))
+        msg = "SBIR: failed ({})".format(str(exc)[:80])
+        console.print("[red]{}[/red]".format(msg))
+        status_messages.append(msg)
         logger.error("SBIR fetch failed: %s", exc)
 
     # --- Phase 2: Merge ---
@@ -128,6 +149,10 @@ def run_pipeline(
         if "sqlite" in export_formats:
             path = export_sqlite(prospects)
             console.print("  SQLite: [green]{}[/green]".format(path))
+
+        # Always write the seed snapshot for Streamlit Cloud fallback
+        seed_path = export_seed_snapshot(prospects, status_messages=status_messages)
+        console.print("  Seed snapshot: [green]{}[/green]".format(seed_path))
 
     # --- Phase 8: Dashboard ---
     render_dashboard(prospects)

@@ -28,6 +28,8 @@ def _get_secret(key: str, default: str = "") -> str:
 ROOT_DIR: Path = Path(__file__).parent.parent
 LOGS_DIR: Path = ROOT_DIR / "logs"
 OUTPUT_DIR: Path = ROOT_DIR / "output_data"
+SEED_DATA_DIR: Path = ROOT_DIR / "seed_data"
+SEED_SNAPSHOT_PATH: Path = SEED_DATA_DIR / "prospect_snapshot.json"
 try:
     LOGS_DIR.mkdir(exist_ok=True)
 except OSError:

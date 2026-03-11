@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, List, Optional
 
-from prospect_engine.config import OUTPUT_DIR
+from prospect_engine.config import OUTPUT_DIR, SEED_SNAPSHOT_PATH
 from prospect_engine.models.prospect import Prospect
 
 logger = logging.getLogger(__name__)
@@ -319,6 +319,50 @@ def _upsert_prospect(conn: sqlite3.Connection, p: Prospect) -> None:
                 r.source_url,
             ),
         )
+
+
+def export_seed_snapshot(
+    prospects: List[Prospect],
+    output_path: Optional[Path] = None,
+    status_messages: Optional[List[str]] = None,
+) -> Path:
+    """Export prospects as a seed snapshot for the Streamlit dashboard.
+
+    Writes the same JSON envelope format that streamlit_app.py expects:
+    {"collected_at": "...", "prospects": [...], "status": [...]}
+
+    This file is meant to be committed to the repo so Streamlit Cloud
+    can load it as fallback data when government APIs are unreachable.
+
+    Args:
+        prospects: Sorted list of Prospect objects.
+        output_path: Destination path. Defaults to SEED_SNAPSHOT_PATH.
+        status_messages: Optional list of source status strings.
+
+    Returns:
+        Path to the written snapshot file.
+    """
+    if output_path is None:
+        output_path = SEED_SNAPSHOT_PATH
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    from datetime import datetime
+
+    data = [asdict(p) for p in prospects]
+    snapshot = {
+        "collected_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+        "prospects": data,
+        "status": status_messages or [],
+    }
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(snapshot, f, indent=2, default=_date_serializer)
+
+    logger.info(
+        "Exported seed snapshot (%d prospects) to %s", len(prospects), output_path
+    )
+    return output_path
 
 
 def _date_serializer(obj: Any) -> str:
