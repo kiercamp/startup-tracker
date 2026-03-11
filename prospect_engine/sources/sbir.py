@@ -101,6 +101,7 @@ def _fetch_agency_awards(
         List of raw award dicts.
     """
     all_results: List[Dict[str, Any]] = []
+    year_errors: List[str] = []
 
     for year in range(start_year, end_year + 1):
         offset = 0
@@ -115,13 +116,15 @@ def _fetch_agency_awards(
             try:
                 response = get_with_retry(BASE_URL, params=params, timeout=30.0)
                 data = response.json()
-            except Exception:
+            except Exception as exc:
                 logger.warning(
-                    "SBIR API request failed for agency=%s year=%d offset=%d",
+                    "SBIR API request failed for agency=%s year=%d offset=%d: %s",
                     agency,
                     year,
                     offset,
+                    str(exc)[:80],
                 )
+                year_errors.append("{}/{}".format(agency, year))
                 break
 
             # Polite delay between requests to avoid 429s
@@ -143,6 +146,12 @@ def _fetch_agency_awards(
 
             if len(results) < SBIR_PAGE_SIZE:
                 break
+
+    # If every year failed and we got nothing, raise so outer fetch() sees it
+    if not all_results and year_errors:
+        raise RuntimeError(
+            "SBIR {} all years failed ({})".format(agency, ", ".join(year_errors))
+        )
 
     logger.debug("SBIR agency=%s: %d awards fetched", agency, len(all_results))
     return all_results

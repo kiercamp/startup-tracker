@@ -75,6 +75,7 @@ def fetch(
     naics_tilde = "~".join(naics_codes)
 
     all_awards: List[ContractAward] = []
+    fetch_errors: List[str] = []
     for state in states:
         try:
             raw_awards = _fetch_for_state(state, naics_tilde, date_range, api_key)
@@ -82,8 +83,15 @@ def fetch(
                 award = _parse_award(raw)
                 if award is not None:
                     all_awards.append(award)
-        except Exception:
+        except Exception as exc:
             logger.exception("SAM.gov fetch failed for state=%s", state)
+            fetch_errors.append("{}: {}".format(state, str(exc)[:100]))
+
+    # If we got zero awards and had errors, surface the failure
+    if not all_awards and fetch_errors:
+        raise RuntimeError(
+            "All SAM.gov requests failed: {}".format("; ".join(fetch_errors))
+        )
 
     filtered = _filter_by_amount(all_awards, floor)
     logger.info(
