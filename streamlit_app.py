@@ -5,8 +5,9 @@ from __future__ import annotations
 import io
 import json
 import csv
+import os
 from dataclasses import asdict
-from datetime import date
+from datetime import date, datetime
 from typing import List
 
 import pandas as pd
@@ -26,49 +27,92 @@ configure_logging()
 
 st.set_page_config(
     page_title="A&D Prospect Engine",
-    page_icon="🛰",
+    page_icon="\U0001f6f0",
     layout="wide",
 )
 
+SNAPSHOT_PATH = "/tmp/prospect_snapshot.json"
+
 
 # ---------------------------------------------------------------------------
-# Pipeline (cached)
+# Snapshot persistence
 # ---------------------------------------------------------------------------
 
 
-@st.cache_data(ttl=600, show_spinner="Fetching funding signals...")
-def load_prospects(_states: tuple) -> List[dict]:
-    """Run the prospect pipeline and return serializable dicts.
+def _date_serializer(obj):
+    """JSON serializer for date objects."""
+    if isinstance(obj, date):
+        return obj.isoformat()
+    raise TypeError("Not serializable: {}".format(type(obj)))
 
-    Using a tuple for states so the argument is hashable for caching.
-    """
-    states_list = list(_states) if _states else None
 
+def _save_snapshot(data, collected_at):
+    """Save prospects + timestamp to JSON file."""
+    with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
+        json.dump(
+            {"collected_at": collected_at, "prospects": data},
+            f,
+            default=_date_serializer,
+        )
+
+
+def _load_snapshot():
+    """Load saved snapshot. Returns (prospects_list, collected_at_str) or (None, None)."""
+    if not os.path.exists(SNAPSHOT_PATH):
+        return None, None
+    try:
+        with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
+            snap = json.load(f)
+        return snap["prospects"], snap["collected_at"]
+    except (json.JSONDecodeError, KeyError):
+        return None, None
+
+
+# ---------------------------------------------------------------------------
+# Signal collection
+# ---------------------------------------------------------------------------
+
+
+def _collect_signals(states_list):
+    """Run the full pipeline and save a snapshot. Returns (data, status_messages)."""
     source_results = []
+    status = []
 
     # SAM.gov
     try:
-        source_results.append(sam_gov.fetch(states=states_list))
-    except Exception:
+        result = sam_gov.fetch(states=states_list)
+        source_results.append(result)
+        status.append("SAM.gov: {} companies".format(len(result)))
+    except Exception as exc:
         source_results.append([])
+        status.append("SAM.gov: failed ({})".format(str(exc)[:60]))
 
     # USASpending
     try:
-        source_results.append(usa_spending.fetch(states=states_list))
-    except Exception:
+        result = usa_spending.fetch(states=states_list)
+        source_results.append(result)
+        status.append("USASpending: {} companies".format(len(result)))
+    except Exception as exc:
         source_results.append([])
+        status.append("USASpending: failed ({})".format(str(exc)[:60]))
 
     # SBIR
     try:
-        source_results.append(sbir.fetch(states=states_list))
-    except Exception:
+        result = sbir.fetch(states=states_list)
+        source_results.append(result)
+        status.append("SBIR: {} companies".format(len(result)))
+    except Exception as exc:
         source_results.append([])
+        status.append("SBIR: failed ({})".format(str(exc)[:60]))
 
     # VC Funding
     try:
-        source_results.append(vc_funding.fetch(states=states_list))
-    except Exception:
+        result = vc_funding.fetch(states=states_list)
+        source_results.append(result)
+        status.append("VC/Private: {} companies".format(len(result)))
+    except Exception as exc:
         source_results.append([])
+        status.append("VC/Private: failed ({})".format(str(exc)[:60]))
 
     prospects = merge_sources(source_results)
     for p in prospects:
@@ -78,14 +122,16 @@ def load_prospects(_states: tuple) -> List[dict]:
         build_outreach_flags(p)
     prospects.sort(key=lambda p: p.total_funding, reverse=True)
 
-    return [asdict(p) for p in prospects]
+    data = [asdict(p) for p in prospects]
+    collected_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    _save_snapshot(data, collected_at)
+
+    return data, collected_at, status
 
 
-def _date_serializer(obj):
-    """JSON serializer for date objects."""
-    if isinstance(obj, date):
-        return obj.isoformat()
-    raise TypeError("Not serializable: {}".format(type(obj)))
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _format_currency(val):
@@ -103,19 +149,54 @@ def _make_link(url, label="View"):
 
 
 # ---------------------------------------------------------------------------
+# Load saved data
+# ---------------------------------------------------------------------------
+
+prospects_data, collected_at = _load_snapshot()
+
+# ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
 
-st.sidebar.title("Filters")
+st.sidebar.title("A&D Prospect Engine")
+
+# Collect / Refresh button
+if prospects_data is not None:
+    collect_label = "Refresh Signals"
+else:
+    collect_label = "Collect Signals"
+
+if st.sidebar.button(collect_label, type="primary", use_container_width=True):
+    with st.spinner("Collecting funding signals... this may take a minute."):
+        prospects_data, collected_at, status = _collect_signals(list(TARGET_STATES))
+    for msg in status:
+        st.sidebar.text(msg)
+    st.rerun()
+
+if prospects_data is None:
+    # ------------------------------------------------------------------
+    # Empty state
+    # ------------------------------------------------------------------
+    st.title("A&D Prospect Engine")
+    st.caption("No data collected yet")
+    st.info(
+        "Click **Collect Signals** in the sidebar to fetch funding data "
+        "from SAM.gov, USASpending, SBIR, and VC sources."
+    )
+    st.stop()
+
+# ------------------------------------------------------------------
+# Dashboard (data exists)
+# ------------------------------------------------------------------
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Filters")
 
 selected_states = st.sidebar.multiselect(
     "States",
     options=TARGET_STATES,
     default=TARGET_STATES,
 )
-
-# Load data
-prospects_data = load_prospects(tuple(selected_states))
 
 # Source filter
 all_sources = set()
@@ -132,7 +213,6 @@ selected_sources = st.sidebar.multiselect(
 # Funding range
 all_funding = [p["total_funding"] for p in prospects_data]
 if all_funding:
-    min_fund = 0.0
     max_fund = max(all_funding)
     if max_fund > 0:
         funding_range = st.sidebar.slider(
@@ -151,7 +231,8 @@ else:
 filtered = [
     p
     for p in prospects_data
-    if any(s in p.get("data_sources", []) for s in selected_sources)
+    if (not selected_states or p.get("state", "") in selected_states)
+    and any(s in p.get("data_sources", []) for s in selected_sources)
     and funding_range[0] <= p["total_funding"] <= funding_range[1]
 ]
 
@@ -161,7 +242,7 @@ filtered = [
 # ---------------------------------------------------------------------------
 
 st.title("A&D Prospect Engine")
-st.caption("Funding signal tracker — {}".format(date.today().isoformat()))
+st.caption("Last updated: {}".format(collected_at))
 
 # Metrics
 total = len(filtered)
