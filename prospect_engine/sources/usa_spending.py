@@ -96,7 +96,11 @@ def fetch(
         total_pages = (
             page_meta.get("total", 0) + USASPENDING_PAGE_SIZE - 1
         ) // USASPENDING_PAGE_SIZE
-        if page >= total_pages:
+        # Cap pagination — without server-side NAICS filter, result set is large.
+        # 50 pages × 100 results = 5000 awards (top by amount), which is plenty
+        # after client-side NAICS filtering.
+        max_pages = min(total_pages, 50)
+        if page >= max_pages:
             break
         page += 1
 
@@ -106,10 +110,17 @@ def fetch(
             "All USASpending requests failed: {}".format(fetch_errors[0])
         )
 
-    filtered = _filter_by_amount(all_awards, floor)
+    # Client-side NAICS filtering (server-side filter broken, see _build_request_body)
+    naics_set = set(naics_codes)
+    naics_filtered = [a for a in all_awards if a.naics_code in naics_set]
+    naics_raw = [r for r, a in zip(all_raw, all_awards) if a.naics_code in naics_set]
+    all_raw = naics_raw
+
+    filtered = _filter_by_amount(naics_filtered, floor)
     logger.info(
-        "USASpending: fetched %d awards, %d after amount filter, across %d pages",
+        "USASpending: fetched %d awards, %d after NAICS filter, %d after amount filter, across %d pages",
         len(all_awards),
+        len(naics_filtered),
         len(filtered),
         page,
     )
@@ -128,7 +139,7 @@ def _build_request_body(
 
     Args:
         states: List of state codes for recipient_locations filter.
-        naics_codes: List of NAICS codes for naics_codes.require filter.
+        naics_codes: List of NAICS codes for naics_codes filter.
         start_date: ISO date string "YYYY-MM-DD".
         end_date: ISO date string "YYYY-MM-DD".
         page: Page number (1-indexed).
@@ -137,10 +148,12 @@ def _build_request_body(
     Returns:
         Dict ready to serialize as JSON request body.
     """
+    # NOTE: naics_codes filter omitted — USASpending API returns HTTP 500
+    # when naics_codes is included (server-side bug as of March 2026).
+    # NAICS filtering is done client-side in _parse_result() instead.
     return {
         "filters": {
             "award_type_codes": ["A", "B", "C", "D"],
-            "naics_codes": {"require": naics_codes},
             "recipient_locations": [{"country": "USA", "state": s} for s in states],
             "time_period": [{"start_date": start_date, "end_date": end_date}],
         },

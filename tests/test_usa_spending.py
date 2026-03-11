@@ -21,7 +21,8 @@ def test_build_request_body():
     )
 
     assert body["filters"]["award_type_codes"] == ["A", "B", "C", "D"]
-    assert body["filters"]["naics_codes"]["require"] == ["336414", "541715"]
+    # naics_codes removed from server query (API bug), filtered client-side
+    assert "naics_codes" not in body["filters"]
     assert len(body["filters"]["recipient_locations"]) == 2
     assert body["filters"]["recipient_locations"][0] == {
         "country": "USA",
