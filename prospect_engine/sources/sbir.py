@@ -16,6 +16,8 @@ from prospect_engine.config import (
     TARGET_STATES,
     LOOKBACK_YEARS,
     SBIR_PAGE_SIZE,
+    SBIR_REQUEST_DELAY,
+    MIN_AWARD_AMOUNT,
 )
 from prospect_engine.models.prospect import SbirAward, Prospect
 from prospect_engine.utils.http import get_with_retry
@@ -31,15 +33,17 @@ def fetch(
     agencies: Optional[List[str]] = None,
     states: Optional[List[str]] = None,
     lookback_years: Optional[int] = None,
+    min_amount: Optional[float] = None,
 ) -> List[Prospect]:
     """Fetch SBIR/STTR awards from sbir.gov for target agencies and territory.
 
-    State filtering is client-side only (not supported by the API).
+    State and amount filtering is client-side only (not supported by the API).
 
     Args:
         agencies: Agencies to query. Defaults to TARGET_AGENCIES.
         states: States to filter client-side. Defaults to TARGET_STATES.
         lookback_years: Years back to include. Defaults to LOOKBACK_YEARS.
+        min_amount: Minimum award amount in USD. Defaults to MIN_AWARD_AMOUNT.
 
     Returns:
         List of Prospect objects with sbir_awards populated.
@@ -47,6 +51,7 @@ def fetch(
     agencies = agencies or TARGET_AGENCIES
     states = states or TARGET_STATES
     years_back = lookback_years or LOOKBACK_YEARS
+    floor = min_amount if min_amount is not None else MIN_AWARD_AMOUNT
 
     current_year = date.today().year
     start_year = current_year - years_back
@@ -63,8 +68,9 @@ def fetch(
             logger.exception("SBIR fetch failed for agency=%s", agency)
 
     filtered = _filter_by_territory(all_awards, states)
+    filtered = _filter_by_amount(filtered, floor)
     logger.info(
-        "SBIR: fetched %d awards, %d in target territory",
+        "SBIR: fetched %d awards, %d after territory + amount filter",
         len(all_awards),
         len(filtered),
     )
@@ -111,7 +117,7 @@ def _fetch_agency_awards(
                 break
 
             # Polite delay between requests to avoid 429s
-            time.sleep(1.0)
+            time.sleep(SBIR_REQUEST_DELAY)
 
             # API may return a list directly or a dict with results
             if isinstance(data, list):
@@ -225,6 +231,22 @@ def _filter_by_territory(
     """
     states_upper = {s.upper() for s in states}
     return [a for a in awards if a.state.upper() in states_upper]
+
+
+def _filter_by_amount(
+    awards: List[SbirAward],
+    min_amount: float,
+) -> List[SbirAward]:
+    """Filter SBIR awards to those at or above a minimum dollar amount.
+
+    Args:
+        awards: Parsed SbirAward objects.
+        min_amount: Minimum award amount in USD (inclusive).
+
+    Returns:
+        Filtered list of SbirAward objects.
+    """
+    return [a for a in awards if a.award_amount >= min_amount]
 
 
 def _group_by_firm(awards: List[SbirAward]) -> List[Prospect]:

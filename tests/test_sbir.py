@@ -6,6 +6,7 @@ from prospect_engine.models.prospect import SbirAward
 from prospect_engine.sources.sbir import (
     _parse_award,
     _filter_by_territory,
+    _filter_by_amount,
     _group_by_firm,
 )
 
@@ -116,6 +117,71 @@ def test_filter_by_territory():
     assert len(filtered) == 2
     states = {a.state for a in filtered}
     assert states == {"AZ", "TX"}
+
+
+def test_filter_by_amount():
+    awards = [
+        SbirAward(
+            award_id="A-001",
+            firm="Small Grant Co",
+            agency="DOD",
+            phase="Phase I",
+            program="SBIR",
+            award_title="Small grant",
+            award_amount=500_000,
+            award_date=date(2024, 1, 1),
+            state="AZ",
+            city="Phoenix",
+        ),
+        SbirAward(
+            award_id="A-002",
+            firm="Big Contract Co",
+            agency="NASA",
+            phase="Phase II",
+            program="SBIR",
+            award_title="Big contract",
+            award_amount=2_000_000,
+            award_date=date(2024, 6, 1),
+            state="TX",
+            city="Houston",
+        ),
+        SbirAward(
+            award_id="A-003",
+            firm="Exact Threshold Co",
+            agency="DOD",
+            phase="Phase II",
+            program="STTR",
+            award_title="Exact threshold",
+            award_amount=1_000_000,
+            award_date=date(2024, 3, 1),
+            state="CO",
+            city="Denver",
+        ),
+    ]
+
+    filtered = _filter_by_amount(awards, 1_000_000)
+    assert len(filtered) == 2
+    amounts = {a.award_amount for a in filtered}
+    assert amounts == {2_000_000, 1_000_000}
+
+
+def test_filter_by_amount_zero_floor():
+    """A floor of zero should keep all awards."""
+    awards = [
+        SbirAward(
+            award_id="A-001",
+            firm="Any Firm",
+            agency="DOD",
+            phase="Phase I",
+            program="SBIR",
+            award_title="Test",
+            award_amount=100,
+            award_date=date(2024, 1, 1),
+            state="AZ",
+            city="Tucson",
+        ),
+    ]
+    assert len(_filter_by_amount(awards, 0)) == 1
 
 
 def test_group_by_firm():

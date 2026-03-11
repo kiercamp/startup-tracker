@@ -17,6 +17,7 @@ from prospect_engine.config import (
     TARGET_NAICS,
     LOOKBACK_YEARS,
     USASPENDING_PAGE_SIZE,
+    MIN_AWARD_AMOUNT,
 )
 from prospect_engine.models.prospect import ContractAward, Prospect
 from prospect_engine.utils.http import post_with_retry
@@ -29,6 +30,7 @@ def fetch(
     states: Optional[List[str]] = None,
     naics_codes: Optional[List[str]] = None,
     lookback_days: Optional[int] = None,
+    min_amount: Optional[float] = None,
 ) -> List[Prospect]:
     """Fetch contract obligation history from USASpending.gov.
 
@@ -39,6 +41,7 @@ def fetch(
         states: State codes to filter. Defaults to TARGET_STATES.
         naics_codes: NAICS codes to filter. Defaults to TARGET_NAICS.
         lookback_days: Days back from today to include. Defaults to LOOKBACK_YEARS * 365.
+        min_amount: Minimum award amount in USD. Defaults to MIN_AWARD_AMOUNT.
 
     Returns:
         List of Prospect objects with contract_awards populated.
@@ -46,6 +49,7 @@ def fetch(
     states = states or TARGET_STATES
     naics_codes = naics_codes or TARGET_NAICS
     days = lookback_days or (LOOKBACK_YEARS * 365)
+    floor = min_amount if min_amount is not None else MIN_AWARD_AMOUNT
 
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
@@ -89,8 +93,14 @@ def fetch(
             break
         page += 1
 
-    logger.info("USASpending: fetched %d awards across %d pages", len(all_awards), page)
-    return _group_by_recipient(all_awards, all_raw)
+    filtered = _filter_by_amount(all_awards, floor)
+    logger.info(
+        "USASpending: fetched %d awards, %d after amount filter, across %d pages",
+        len(all_awards),
+        len(filtered),
+        page,
+    )
+    return _group_by_recipient(filtered, all_raw)
 
 
 def _build_request_body(
@@ -191,6 +201,22 @@ def _parse_result(raw: Dict[str, Any]) -> Optional[ContractAward]:
     except Exception:
         logger.exception("Failed to parse USASpending result")
         return None
+
+
+def _filter_by_amount(
+    awards: List[ContractAward],
+    min_amount: float,
+) -> List[ContractAward]:
+    """Filter contract awards to those at or above a minimum dollar amount.
+
+    Args:
+        awards: Parsed ContractAward objects.
+        min_amount: Minimum obligation amount in USD (inclusive).
+
+    Returns:
+        Filtered list of ContractAward objects.
+    """
+    return [a for a in awards if a.obligation_amount >= min_amount]
 
 
 def _group_by_recipient(

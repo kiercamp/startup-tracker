@@ -8,7 +8,6 @@ import csv
 import os
 from dataclasses import asdict
 from datetime import date, datetime
-from typing import List
 
 import pandas as pd
 import streamlit as st
@@ -20,7 +19,7 @@ from prospect_engine.enrichment.company_profile import (
     build_outreach_flags,
     filter_by_founded_year,
 )
-from prospect_engine.sources import sam_gov, usa_spending, sbir, vc_funding
+from prospect_engine.sources import sam_gov, usa_spending, sbir
 from prospect_engine.utils.logging_setup import configure_logging
 
 configure_logging()
@@ -105,15 +104,6 @@ def _collect_signals(states_list):
         source_results.append([])
         status.append("SBIR: failed ({})".format(str(exc)[:60]))
 
-    # VC Funding
-    try:
-        result = vc_funding.fetch(states=states_list)
-        source_results.append(result)
-        status.append("VC/Private: {} companies".format(len(result)))
-    except Exception as exc:
-        source_results.append([])
-        status.append("VC/Private: failed ({})".format(str(exc)[:60]))
-
     prospects = merge_sources(source_results)
     for p in prospects:
         enrich_prospect(p)
@@ -181,7 +171,7 @@ if prospects_data is None:
     st.caption("No data collected yet")
     st.info(
         "Click **Collect Signals** in the sidebar to fetch funding data "
-        "from SAM.gov, USASpending, SBIR, and VC sources."
+        "from SAM.gov, USASpending, and SBIR sources."
     )
     st.stop()
 
@@ -298,7 +288,6 @@ if filtered:
                 "State": p["state"],
                 "Contracts": p["contract_count"] or "",
                 "SBIR": sbir_str,
-                "VC Raised": _format_currency(p["total_vc_raised"]),
                 "Total Funding": _format_currency(p["total_funding"]),
                 "Flags": len(p.get("outreach_flags", [])) or "",
                 "Sources": ", ".join(p.get("data_sources", [])),
@@ -383,36 +372,8 @@ if filtered:
                     },
                 )
 
-        # VC Rounds
-        vc_rounds = company.get("vc_rounds", [])
-        if vc_rounds:
-            with st.expander(
-                "VC / Private Rounds ({})".format(len(vc_rounds)), expanded=True
-            ):
-                vc_rows = []
-                for r in vc_rounds:
-                    vc_rows.append(
-                        {
-                            "Round": r.get("round_type", ""),
-                            "Amount": _format_currency(r.get("amount_usd", 0)),
-                            "Lead Investor": r.get("lead_investor", ""),
-                            "Date": r.get("announced_date", "") or "",
-                            "Link": _make_link(r.get("source_url", "")),
-                        }
-                    )
-                st.dataframe(
-                    pd.DataFrame(vc_rows),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Link": st.column_config.LinkColumn(
-                            "Link", display_text="View"
-                        ),
-                    },
-                )
-
         # No funding data
-        if not contracts and not sbir_awards and not vc_rounds:
+        if not contracts and not sbir_awards:
             st.info("No individual funding records available for this company.")
 
 
@@ -451,7 +412,6 @@ if filtered:
         "sbir_phase_ii_count",
         "sbir_phase_iii_count",
         "total_sbir_amount",
-        "total_vc_raised",
         "total_funding",
         "data_sources",
         "outreach_flags",
@@ -471,7 +431,6 @@ if filtered:
                 "sbir_phase_ii_count": p.get("sbir_phase_ii_count", 0),
                 "sbir_phase_iii_count": p.get("sbir_phase_iii_count", 0),
                 "total_sbir_amount": p.get("total_sbir_amount", 0),
-                "total_vc_raised": p.get("total_vc_raised", 0),
                 "total_funding": p.get("total_funding", 0),
                 "data_sources": ", ".join(p.get("data_sources", [])),
                 "outreach_flags": "; ".join(p.get("outreach_flags", [])),

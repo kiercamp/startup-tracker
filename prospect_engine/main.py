@@ -16,7 +16,7 @@ from rich.panel import Panel
 from rich import box
 
 from prospect_engine.utils.logging_setup import configure_logging
-from prospect_engine.sources import sam_gov, usa_spending, sbir, vc_funding
+from prospect_engine.sources import sam_gov, usa_spending, sbir
 from prospect_engine.enrichment.company_profile import (
     merge_sources,
     enrich_prospect,
@@ -97,17 +97,6 @@ def run_pipeline(
         source_results.append([])
         console.print("[red]failed: {}[/red]".format(str(exc)[:80]))
         logger.error("SBIR fetch failed: %s", exc)
-
-    # VC Funding
-    console.print("  [yellow]VC/Private[/yellow] funding...", end=" ")
-    try:
-        vc_results = vc_funding.fetch(states=states)
-        source_results.append(vc_results)
-        console.print("[green]{} companies[/green]".format(len(vc_results)))
-    except Exception as exc:
-        source_results.append([])
-        console.print("[red]failed: {}[/red]".format(str(exc)[:80]))
-        logger.error("VC funding fetch failed: %s", exc)
 
     # --- Phase 2: Merge ---
     console.print("\n[dim]Merging and enriching...[/dim]")
@@ -195,7 +184,6 @@ def render_dashboard(
     table.add_column("State", width=5)
     table.add_column("Contracts", justify="right", width=10)
     table.add_column("SBIR", justify="right", width=10)
-    table.add_column("VC Raised", justify="right", width=14)
     table.add_column("Total Funding", justify="right", width=16, style="bold green")
     table.add_column("Flags", width=6, justify="center")
     table.add_column("Sources", width=20)
@@ -227,7 +215,6 @@ def render_dashboard(
                 )
                 else ""
             ),
-            "${:,.0f}".format(p.total_vc_raised) if p.total_vc_raised else "",
             "${:,.0f}".format(p.total_funding),
             flag_style,
             ", ".join(p.data_sources),

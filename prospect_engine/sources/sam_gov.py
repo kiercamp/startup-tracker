@@ -17,6 +17,7 @@ from prospect_engine.config import (
     TARGET_NAICS,
     LOOKBACK_YEARS,
     SAM_GOV_PAGE_SIZE,
+    MIN_AWARD_AMOUNT,
 )
 from prospect_engine.models.prospect import ContractAward, Prospect
 from prospect_engine.utils.http import get_with_retry
@@ -29,6 +30,7 @@ def fetch(
     states: Optional[List[str]] = None,
     naics_codes: Optional[List[str]] = None,
     lookback_days: Optional[int] = None,
+    min_amount: Optional[float] = None,
 ) -> List[Prospect]:
     """Fetch DoD/NASA contract awards from SAM.gov for target territory and NAICS codes.
 
@@ -39,6 +41,7 @@ def fetch(
         states: State codes to query. Defaults to TARGET_STATES from config.
         naics_codes: NAICS codes to filter. Defaults to TARGET_NAICS from config.
         lookback_days: Number of days back to search. Defaults to LOOKBACK_YEARS * 365.
+        min_amount: Minimum obligation amount in USD. Defaults to MIN_AWARD_AMOUNT.
 
     Returns:
         List of Prospect objects, one per unique recipient, with contract_awards populated.
@@ -55,6 +58,7 @@ def fetch(
     states = states or TARGET_STATES
     naics_codes = naics_codes or TARGET_NAICS
     days = lookback_days or (LOOKBACK_YEARS * 365)
+    floor = min_amount if min_amount is not None else MIN_AWARD_AMOUNT
 
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
@@ -78,12 +82,14 @@ def fetch(
         except Exception:
             logger.exception("SAM.gov fetch failed for state=%s", state)
 
+    filtered = _filter_by_amount(all_awards, floor)
     logger.info(
-        "SAM.gov: fetched %d total awards across %d states",
+        "SAM.gov: fetched %d awards, %d after amount filter, across %d states",
         len(all_awards),
+        len(filtered),
         len(states),
     )
-    return _group_by_recipient(all_awards)
+    return _group_by_recipient(filtered)
 
 
 def _fetch_for_state(
@@ -187,6 +193,22 @@ def _parse_award(raw: Dict[str, Any]) -> Optional[ContractAward]:
     except Exception:
         logger.exception("Failed to parse SAM.gov award")
         return None
+
+
+def _filter_by_amount(
+    awards: List[ContractAward],
+    min_amount: float,
+) -> List[ContractAward]:
+    """Filter contract awards to those at or above a minimum dollar amount.
+
+    Args:
+        awards: Parsed ContractAward objects.
+        min_amount: Minimum obligation amount in USD (inclusive).
+
+    Returns:
+        Filtered list of ContractAward objects.
+    """
+    return [a for a in awards if a.obligation_amount >= min_amount]
 
 
 def _group_by_recipient(awards: List[ContractAward]) -> List[Prospect]:

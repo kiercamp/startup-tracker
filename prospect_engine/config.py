@@ -25,7 +25,6 @@ except OSError:
 
 # --- API Keys ---
 SAM_GOV_API_KEY: str = os.environ.get("SAM_GOV_API_KEY", "")
-CRUNCHBASE_API_KEY: str = os.environ.get("CRUNCHBASE_API_KEY", "")
 
 # --- Territory ---
 TARGET_STATES: List[str] = ["AZ", "NM", "CO", "UT", "TX"]
@@ -41,14 +40,18 @@ TARGET_NAICS: List[str] = [
 ]
 
 # --- Date Range ---
-LOOKBACK_YEARS: int = 10
+LOOKBACK_YEARS: int = 5
 FOUNDED_WITHIN_YEARS: int = 10
 
 # --- API Rate Limits ---
 SAM_GOV_DAILY_LIMIT: int = 1000
 SAM_GOV_PAGE_SIZE: int = 100
 USASPENDING_PAGE_SIZE: int = 100
-SBIR_PAGE_SIZE: int = 100
+SBIR_PAGE_SIZE: int = 500
+SBIR_REQUEST_DELAY: float = 2.5
+
+# --- Award Amount Floor ---
+MIN_AWARD_AMOUNT: float = 1_000_000
 
 # --- Retry Settings ---
 MAX_RETRIES: int = 2
