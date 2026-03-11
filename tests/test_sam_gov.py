@@ -296,6 +296,7 @@ def test_group_by_recipient():
 def test_fetch_raises_without_api_key(monkeypatch):
     import prospect_engine.sources.sam_gov as sam_mod
 
-    monkeypatch.setattr(sam_mod, "SAM_GOV_API_KEY", "")
+    # _get_secret is called at fetch() time, patch the imported reference
+    monkeypatch.setattr(sam_mod, "_get_secret", lambda key, default="": "")
     with pytest.raises(ValueError, match="SAM_GOV_API_KEY"):
         sam_mod.fetch()

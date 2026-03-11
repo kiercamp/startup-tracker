@@ -15,22 +15,24 @@ import streamlit as st
 # Bridge Streamlit Cloud secrets → env vars BEFORE importing engine config.
 # On Streamlit Cloud, secrets live in st.secrets (not .env).
 # config.py reads os.environ, so we set them here first.
+_secrets_loaded = 0
 try:
     for key, value in st.secrets.items():
         if isinstance(value, str):
             os.environ.setdefault(key, value)
+            _secrets_loaded += 1
 except Exception:
     pass  # Local dev — secrets come from .env via dotenv
 
-from prospect_engine.config import EXISTING_PIPELINE, TARGET_STATES
-from prospect_engine.enrichment.company_profile import (
+from prospect_engine.config import EXISTING_PIPELINE, TARGET_STATES  # noqa: E402
+from prospect_engine.enrichment.company_profile import (  # noqa: E402
     merge_sources,
     enrich_prospect,
     build_outreach_flags,
     filter_by_founded_year,
 )
-from prospect_engine.sources import sam_gov, usa_spending, sbir
-from prospect_engine.utils.logging_setup import configure_logging
+from prospect_engine.sources import sam_gov, usa_spending, sbir  # noqa: E402
+from prospect_engine.utils.logging_setup import configure_logging  # noqa: E402
 
 configure_logging()
 

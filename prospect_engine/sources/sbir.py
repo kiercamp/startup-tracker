@@ -57,6 +57,7 @@ def fetch(
     start_year = current_year - years_back
 
     all_awards: List[SbirAward] = []
+    fetch_errors: List[str] = []
     for agency in agencies:
         try:
             raw_awards = _fetch_agency_awards(agency, start_year, current_year)
@@ -64,8 +65,15 @@ def fetch(
                 award = _parse_award(raw)
                 if award is not None:
                     all_awards.append(award)
-        except Exception:
+        except Exception as exc:
             logger.exception("SBIR fetch failed for agency=%s", agency)
+            fetch_errors.append("{}: {}".format(agency, str(exc)[:100]))
+
+    # If we got zero awards and had errors, surface the failure
+    if not all_awards and fetch_errors:
+        raise RuntimeError(
+            "All SBIR requests failed: {}".format("; ".join(fetch_errors))
+        )
 
     filtered = _filter_by_territory(all_awards, states)
     filtered = _filter_by_amount(filtered, floor)

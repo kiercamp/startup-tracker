@@ -13,7 +13,7 @@ from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
 from prospect_engine.config import (
-    SAM_GOV_API_KEY,
+    _get_secret,
     TARGET_STATES,
     TARGET_NAICS,
     LOOKBACK_YEARS,
@@ -51,10 +51,13 @@ def fetch(
     Raises:
         ValueError: If SAM_GOV_API_KEY is not set.
     """
-    if not SAM_GOV_API_KEY:
+    # Read API key at call time — not at import time — so Streamlit Cloud
+    # secrets are available even if they weren't during module init.
+    api_key = _get_secret("SAM_GOV_API_KEY")
+    if not api_key:
         raise ValueError(
             "SAM_GOV_API_KEY is not set. Register at SAM.gov and add your "
-            "API key to .env"
+            "API key to .env or Streamlit Cloud secrets"
         )
 
     states = states or TARGET_STATES
@@ -74,9 +77,7 @@ def fetch(
     all_awards: List[ContractAward] = []
     for state in states:
         try:
-            raw_awards = _fetch_for_state(
-                state, naics_tilde, date_range, SAM_GOV_API_KEY
-            )
+            raw_awards = _fetch_for_state(state, naics_tilde, date_range, api_key)
             for raw in raw_awards:
                 award = _parse_award(raw)
                 if award is not None:

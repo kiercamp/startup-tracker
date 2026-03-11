@@ -57,6 +57,7 @@ def fetch(
     all_awards: List[ContractAward] = []
     all_raw: List[Dict[str, Any]] = []
     page = 1
+    fetch_errors: List[str] = []
 
     while True:
         body = _build_request_body(
@@ -71,8 +72,9 @@ def fetch(
         try:
             response = post_with_retry(BASE_URL, json=body, timeout=60.0)
             data = response.json()
-        except Exception:
+        except Exception as exc:
             logger.exception("USASpending fetch failed on page %d", page)
+            fetch_errors.append(str(exc)[:120])
             break
 
         results = data.get("results", [])
@@ -92,6 +94,12 @@ def fetch(
         if page >= total_pages:
             break
         page += 1
+
+    # If we got zero awards and had errors, surface the failure
+    if not all_awards and fetch_errors:
+        raise RuntimeError(
+            "All USASpending requests failed: {}".format(fetch_errors[0])
+        )
 
     filtered = _filter_by_amount(all_awards, floor)
     logger.info(
