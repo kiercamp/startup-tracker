@@ -14,8 +14,14 @@ load_dotenv()
 ROOT_DIR: Path = Path(__file__).parent.parent
 LOGS_DIR: Path = ROOT_DIR / "logs"
 OUTPUT_DIR: Path = ROOT_DIR / "output_data"
-LOGS_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
+try:
+    LOGS_DIR.mkdir(exist_ok=True)
+except OSError:
+    pass
+try:
+    OUTPUT_DIR.mkdir(exist_ok=True)
+except OSError:
+    pass
 
 # --- API Keys ---
 SAM_GOV_API_KEY: str = os.environ.get("SAM_GOV_API_KEY", "")

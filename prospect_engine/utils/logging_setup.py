@@ -29,15 +29,18 @@ def configure_logging(level: int = logging.INFO) -> None:
     )
 
     # File handler: errors only, rotating 10MB / 3 backups
-    error_log_path = LOGS_DIR / "errors.log"
-    file_handler = logging.handlers.RotatingFileHandler(
-        error_log_path,
-        maxBytes=10 * 1024 * 1024,
-        backupCount=3,
-    )
-    file_handler.setLevel(logging.ERROR)
-    file_handler.setFormatter(formatter)
-    root_logger.addHandler(file_handler)
+    try:
+        error_log_path = LOGS_DIR / "errors.log"
+        file_handler = logging.handlers.RotatingFileHandler(
+            error_log_path,
+            maxBytes=10 * 1024 * 1024,
+            backupCount=3,
+        )
+        file_handler.setLevel(logging.ERROR)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+    except OSError:
+        pass  # Skip file logging in read-only environments (e.g. Streamlit Cloud)
 
     # Stream handler: configurable level
     stream_handler = logging.StreamHandler(sys.stdout)
