@@ -32,10 +32,12 @@ def test_post_with_retry_success():
 
 
 @patch("prospect_engine.utils.http.time.sleep")
-def test_get_retries_on_429(mock_sleep):
+@patch("prospect_engine.utils.http.random.random", return_value=0.5)
+def test_get_retries_on_429(mock_random, mock_sleep):
     """GET retries on 429 then succeeds."""
     fail_response = MagicMock(spec=httpx.Response)
     fail_response.status_code = 429
+    fail_response.headers = {}  # No Retry-After header
     fail_response.raise_for_status = MagicMock(
         side_effect=httpx.HTTPStatusError(
             "429", request=MagicMock(), response=fail_response
@@ -56,10 +58,12 @@ def test_get_retries_on_429(mock_sleep):
 
 
 @patch("prospect_engine.utils.http.time.sleep")
-def test_get_retries_on_500(mock_sleep):
+@patch("prospect_engine.utils.http.random.random", return_value=0.5)
+def test_get_retries_on_500(mock_random, mock_sleep):
     """GET retries on 500 then succeeds."""
     fail_response = MagicMock(spec=httpx.Response)
     fail_response.status_code = 500
+    fail_response.headers = {}
     fail_response.raise_for_status = MagicMock(
         side_effect=httpx.HTTPStatusError(
             "500", request=MagicMock(), response=fail_response

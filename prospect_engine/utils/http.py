@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import time
 from typing import Callable, Optional
 
@@ -48,7 +49,18 @@ def _execute_with_retry(
             if status == 429 or status >= 500:
                 last_exception = exc
                 if attempt < MAX_RETRIES:
-                    sleep_time = min(backoff, MAX_BACKOFF_SECONDS)
+                    # Respect Retry-After header if present (common on 429s)
+                    retry_after = exc.response.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            sleep_time = min(float(retry_after), MAX_BACKOFF_SECONDS)
+                        except (ValueError, TypeError):
+                            sleep_time = min(backoff, MAX_BACKOFF_SECONDS)
+                    else:
+                        sleep_time = min(backoff, MAX_BACKOFF_SECONDS)
+                    # Add jitter (±25%) to avoid thundering herd
+                    jitter = sleep_time * 0.25 * (2 * random.random() - 1)
+                    sleep_time = max(0.5, sleep_time + jitter)
                     logger.warning(
                         "%s: HTTP %d on attempt %d/%d, retrying in %.1fs",
                         description,

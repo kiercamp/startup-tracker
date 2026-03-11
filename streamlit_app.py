@@ -12,6 +12,16 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
+# Bridge Streamlit Cloud secrets → env vars BEFORE importing engine config.
+# On Streamlit Cloud, secrets live in st.secrets (not .env).
+# config.py reads os.environ, so we set them here first.
+try:
+    for key, value in st.secrets.items():
+        if isinstance(value, str):
+            os.environ.setdefault(key, value)
+except Exception:
+    pass  # Local dev — secrets come from .env via dotenv
+
 from prospect_engine.config import EXISTING_PIPELINE, TARGET_STATES
 from prospect_engine.enrichment.company_profile import (
     merge_sources,
@@ -85,28 +95,33 @@ def _collect_signals(states_list):
     try:
         result = sam_gov.fetch(states=states_list)
         source_results.append(result)
-        status.append("SAM.gov: {} companies".format(len(result)))
+        n_awards = sum(len(p.contract_awards) for p in result)
+        status.append("SAM.gov: {} companies, {} awards".format(len(result), n_awards))
     except Exception as exc:
         source_results.append([])
-        status.append("SAM.gov: failed ({})".format(str(exc)[:60]))
+        status.append("SAM.gov: failed ({})".format(str(exc)[:80]))
 
     # USASpending
     try:
         result = usa_spending.fetch(states=states_list)
         source_results.append(result)
-        status.append("USASpending: {} companies".format(len(result)))
+        n_awards = sum(len(p.contract_awards) for p in result)
+        status.append(
+            "USASpending: {} companies, {} awards".format(len(result), n_awards)
+        )
     except Exception as exc:
         source_results.append([])
-        status.append("USASpending: failed ({})".format(str(exc)[:60]))
+        status.append("USASpending: failed ({})".format(str(exc)[:80]))
 
     # SBIR
     try:
         result = sbir.fetch(states=states_list)
         source_results.append(result)
-        status.append("SBIR: {} companies".format(len(result)))
+        n_awards = sum(len(p.sbir_awards) for p in result)
+        status.append("SBIR: {} companies, {} awards".format(len(result), n_awards))
     except Exception as exc:
         source_results.append([])
-        status.append("SBIR: failed ({})".format(str(exc)[:60]))
+        status.append("SBIR: failed ({})".format(str(exc)[:80]))
 
     prospects = merge_sources(source_results)
     for p in prospects:
