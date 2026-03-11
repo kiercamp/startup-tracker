@@ -8,6 +8,7 @@ No authentication required.
 from __future__ import annotations
 
 import logging
+import time
 from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
@@ -17,6 +18,7 @@ from prospect_engine.config import (
     TARGET_NAICS,
     LOOKBACK_YEARS,
     USASPENDING_PAGE_SIZE,
+    USASPENDING_REQUEST_DELAY,
     MIN_AWARD_AMOUNT,
 )
 from prospect_engine.models.prospect import ContractAward, Prospect
@@ -76,6 +78,9 @@ def fetch(
             logger.exception("USASpending fetch failed on page %d", page)
             fetch_errors.append(str(exc)[:120])
             break
+
+        # Polite delay between requests to avoid 429s
+        time.sleep(USASPENDING_REQUEST_DELAY)
 
         results = data.get("results", [])
         if not results:

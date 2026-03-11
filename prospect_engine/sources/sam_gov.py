@@ -76,7 +76,7 @@ def fetch(
 
     all_awards: List[ContractAward] = []
     fetch_errors: List[str] = []
-    for state in states:
+    for idx, state in enumerate(states):
         try:
             raw_awards = _fetch_for_state(state, naics_tilde, date_range, api_key)
             for raw in raw_awards:
@@ -86,6 +86,10 @@ def fetch(
         except Exception as exc:
             logger.exception("SAM.gov fetch failed for state=%s", state)
             fetch_errors.append("{}: {}".format(state, str(exc)[:100]))
+
+        # Cool-down between states to avoid sustained request bursts
+        if idx < len(states) - 1:
+            time.sleep(SAM_GOV_REQUEST_DELAY * 2)
 
     # If we got zero awards and had errors, surface the failure
     if not all_awards and fetch_errors:

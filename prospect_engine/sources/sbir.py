@@ -50,7 +50,7 @@ def fetch(
     """
     agencies = agencies or TARGET_AGENCIES
     states = states or TARGET_STATES
-    years_back = lookback_years or LOOKBACK_YEARS
+    years_back = lookback_years or min(LOOKBACK_YEARS, 3)
     floor = min_amount if min_amount is not None else MIN_AWARD_AMOUNT
 
     current_year = date.today().year
@@ -103,7 +103,8 @@ def _fetch_agency_awards(
     all_results: List[Dict[str, Any]] = []
     year_errors: List[str] = []
 
-    for year in range(start_year, end_year + 1):
+    years = list(range(start_year, end_year + 1))
+    for year_idx, year in enumerate(years):
         offset = 0
         while True:
             params = {
@@ -146,6 +147,10 @@ def _fetch_agency_awards(
 
             if len(results) < SBIR_PAGE_SIZE:
                 break
+
+        # Cool-down between years to spread requests
+        if year_idx < len(years) - 1:
+            time.sleep(SBIR_REQUEST_DELAY)
 
     # If every year failed and we got nothing, raise so outer fetch() sees it
     if not all_results and year_errors:
