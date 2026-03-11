@@ -51,10 +51,10 @@ USASPENDING_PAGE_SIZE: int = 100
 SBIR_PAGE_SIZE: int = 100
 
 # --- Retry Settings ---
-MAX_RETRIES: int = 5
+MAX_RETRIES: int = 2
 INITIAL_BACKOFF_SECONDS: float = 1.0
 BACKOFF_MULTIPLIER: float = 2.0
-MAX_BACKOFF_SECONDS: float = 60.0
+MAX_BACKOFF_SECONDS: float = 10.0
 
 # --- Outreach Flag Settings ---
 OUTREACH_LOOKBACK_DAYS: int = 90
