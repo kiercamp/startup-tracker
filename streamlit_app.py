@@ -225,7 +225,7 @@ if filtered:
         )
 
     df = pd.DataFrame(table_rows)
-    st.dataframe(df, width="stretch", hide_index=True)
+    st.dataframe(df, use_container_width=True, hide_index=True)
 else:
     st.info("No prospects found matching the current filters.")
 
@@ -263,7 +263,7 @@ if filtered:
                     )
                 st.dataframe(
                     pd.DataFrame(contract_rows),
-                    width="stretch",
+                    use_container_width=True,
                     hide_index=True,
                     column_config={
                         "Link": st.column_config.LinkColumn(
@@ -293,7 +293,7 @@ if filtered:
                     )
                 st.dataframe(
                     pd.DataFrame(sbir_rows),
-                    width="stretch",
+                    use_container_width=True,
                     hide_index=True,
                     column_config={
                         "Link": st.column_config.LinkColumn(
@@ -321,7 +321,7 @@ if filtered:
                     )
                 st.dataframe(
                     pd.DataFrame(vc_rows),
-                    width="stretch",
+                    use_container_width=True,
                     hide_index=True,
                     column_config={
                         "Link": st.column_config.LinkColumn(
@@ -346,7 +346,7 @@ if flagged_prospects:
     for p in flagged_prospects:
         for flag in p["outreach_flags"]:
             flag_rows.append({"Company": p["company_name"], "Flag": flag})
-    st.dataframe(pd.DataFrame(flag_rows), width="stretch", hide_index=True)
+    st.dataframe(pd.DataFrame(flag_rows), use_container_width=True, hide_index=True)
 
 
 # ---------------------------------------------------------------------------
