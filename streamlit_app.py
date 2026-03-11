@@ -45,26 +45,30 @@ def _date_serializer(obj):
     raise TypeError("Not serializable: {}".format(type(obj)))
 
 
-def _save_snapshot(data, collected_at):
-    """Save prospects + timestamp to JSON file."""
+def _save_snapshot(data, collected_at, status_messages=None):
+    """Save prospects + timestamp + status to JSON file."""
     with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
         json.dump(
-            {"collected_at": collected_at, "prospects": data},
+            {
+                "collected_at": collected_at,
+                "prospects": data,
+                "status": status_messages or [],
+            },
             f,
             default=_date_serializer,
         )
 
 
 def _load_snapshot():
-    """Load saved snapshot. Returns (prospects_list, collected_at_str) or (None, None)."""
+    """Load saved snapshot. Returns (prospects_list, collected_at_str, status_list) or (None, None, None)."""
     if not os.path.exists(SNAPSHOT_PATH):
-        return None, None
+        return None, None, None
     try:
         with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
             snap = json.load(f)
-        return snap["prospects"], snap["collected_at"]
+        return snap["prospects"], snap["collected_at"], snap.get("status", [])
     except (json.JSONDecodeError, KeyError):
-        return None, None
+        return None, None, None
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +118,7 @@ def _collect_signals(states_list):
 
     data = [asdict(p) for p in prospects]
     collected_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    _save_snapshot(data, collected_at)
+    _save_snapshot(data, collected_at, status)
 
     return data, collected_at, status
 
@@ -142,7 +146,7 @@ def _make_link(url, label="View"):
 # Load saved data
 # ---------------------------------------------------------------------------
 
-prospects_data, collected_at = _load_snapshot()
+prospects_data, collected_at, last_status = _load_snapshot()
 
 # ---------------------------------------------------------------------------
 # Sidebar
@@ -159,9 +163,18 @@ else:
 if st.sidebar.button(collect_label, type="primary", use_container_width=True):
     with st.spinner("Collecting funding signals... this may take a minute."):
         prospects_data, collected_at, status = _collect_signals(list(TARGET_STATES))
-    for msg in status:
-        st.sidebar.text(msg)
+    last_status = status
     st.rerun()
+
+# Show source status from last collection
+if last_status:
+    st.sidebar.markdown("---")
+    st.sidebar.caption("Last collection status:")
+    for msg in last_status:
+        if "failed" in msg.lower():
+            st.sidebar.error(msg)
+        else:
+            st.sidebar.success(msg)
 
 if prospects_data is None:
     # ------------------------------------------------------------------

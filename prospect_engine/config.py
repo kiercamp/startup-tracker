@@ -10,6 +10,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _get_secret(key: str, default: str = "") -> str:
+    """Load a secret from env vars (local .env) or Streamlit secrets (Cloud)."""
+    val = os.environ.get(key, "")
+    if val:
+        return val
+    try:
+        import streamlit as st  # noqa: F811
+
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
+
 # --- Paths ---
 ROOT_DIR: Path = Path(__file__).parent.parent
 LOGS_DIR: Path = ROOT_DIR / "logs"
@@ -24,7 +38,7 @@ except OSError:
     pass
 
 # --- API Keys ---
-SAM_GOV_API_KEY: str = os.environ.get("SAM_GOV_API_KEY", "")
+SAM_GOV_API_KEY: str = _get_secret("SAM_GOV_API_KEY")
 
 # --- Territory ---
 TARGET_STATES: List[str] = ["AZ", "NM", "CO", "UT", "TX"]
