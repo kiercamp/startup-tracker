@@ -213,7 +213,7 @@ if prospects_data is not None:
 else:
     collect_label = "Collect Signals"
 
-if st.sidebar.button(collect_label, type="primary", use_container_width=True):
+if st.sidebar.button(collect_label, type="primary"):
     with st.spinner("Collecting funding signals... this may take a minute."):
         prospects_data, collected_at, status = _collect_signals(list(TARGET_STATES))
     last_status = status
@@ -369,7 +369,7 @@ if filtered:
         )
 
     df = pd.DataFrame(table_rows)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width="stretch", hide_index=True)
 else:
     st.info("No prospects found matching the current filters.")
 
@@ -407,7 +407,7 @@ if filtered:
                     )
                 st.dataframe(
                     pd.DataFrame(contract_rows),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                     column_config={
                         "Link": st.column_config.LinkColumn(
@@ -437,7 +437,7 @@ if filtered:
                     )
                 st.dataframe(
                     pd.DataFrame(sbir_rows),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                     column_config={
                         "Link": st.column_config.LinkColumn(
@@ -462,7 +462,7 @@ if flagged_prospects:
     for p in flagged_prospects:
         for flag in p["outreach_flags"]:
             flag_rows.append({"Company": p["company_name"], "Flag": flag})
-    st.dataframe(pd.DataFrame(flag_rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(flag_rows), width="stretch", hide_index=True)
 
 
 # ---------------------------------------------------------------------------
