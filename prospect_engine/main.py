@@ -292,6 +292,79 @@ def render_dashboard(
     console.print()
 
 
+def _show_cache_stats() -> None:
+    """Display cache hit/miss ratios and queue stats."""
+    from prospect_engine.utils.cache import get_cache
+    from prospect_engine.scheduler.sweep import queue_stats
+
+    cache = get_cache()
+    stats = cache.stats()
+
+    console.print("\n[bold cyan]Cache Statistics[/bold cyan]")
+    if not stats:
+        console.print("  [dim]No cache activity recorded this session.[/dim]")
+    else:
+        table = Table(box=box.SIMPLE)
+        table.add_column("Endpoint", style="bold")
+        table.add_column("Hits", justify="right", style="green")
+        table.add_column("Misses", justify="right", style="yellow")
+        table.add_column("Ratio", justify="right")
+        for ep, s in stats.items():
+            ratio_pct = "{:.0f}%".format(s.get("ratio", 0) * 100)
+            table.add_row(ep, str(s["hits"]), str(s["misses"]), ratio_pct)
+        console.print(table)
+
+    # Queue stats
+    qstats = queue_stats()
+    if qstats:
+        console.print("\n[bold cyan]Task Queue[/bold cyan]")
+        for status, cnt in sorted(qstats.items()):
+            console.print("  {}: [bold]{}[/bold]".format(status, cnt))
+
+    # Evict expired entries
+    evicted = cache.evict_expired()
+    if evicted:
+        console.print("\n  [dim]Evicted {} expired cache entries[/dim]".format(evicted))
+    console.print()
+
+
+def _run_sweep_command(sweep_name: Optional[str] = None) -> None:
+    """Run sweeps from the CLI.
+
+    Args:
+        sweep_name: Specific sweep to run (force), or None for all due sweeps.
+    """
+    from prospect_engine.scheduler.sweep import run_sweep, run_all_due_sweeps, SWEEP_PROFILES
+
+    if sweep_name:
+        if sweep_name not in SWEEP_PROFILES:
+            console.print(
+                "[red]Unknown sweep: {}[/red]\nAvailable: {}".format(
+                    sweep_name, ", ".join(SWEEP_PROFILES.keys())
+                )
+            )
+            return
+        console.print("[cyan]Running sweep: {}[/cyan]".format(sweep_name))
+        result = run_sweep(sweep_name, force=True)
+        console.print("  Status: [bold]{}[/bold]".format(result["status"]))
+        if result.get("stats"):
+            s = result["stats"]
+            console.print(
+                "  Tasks: {} processed, {} succeeded, {} failed".format(
+                    s["processed"], s["succeeded"], s["failed"]
+                )
+            )
+    else:
+        console.print("[cyan]Running all due sweeps...[/cyan]")
+        results = run_all_due_sweeps()
+        for name, result in results.items():
+            status = result.get("status", "unknown")
+            if status == "skipped":
+                console.print("  {} — [dim]not due[/dim]".format(name))
+            else:
+                console.print("  {} — [bold]{}[/bold]".format(name, status))
+
+
 def _parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
@@ -314,12 +387,48 @@ def _parse_args() -> argparse.Namespace:
         nargs="+",
         help="Override target states (default: AZ NM CO UT TX)",
     )
+    parser.add_argument(
+        "--sweep",
+        nargs="?",
+        const="__all__",
+        metavar="NAME",
+        help="Run sweep(s) before the pipeline. No arg = all due sweeps. "
+             "Name = run that sweep now (sbir_nightly, sam_gov_6h, usa_spending_4h)",
+    )
+    parser.add_argument(
+        "--sweep-daemon",
+        action="store_true",
+        help="Start the sweep scheduler as a background daemon alongside the pipeline",
+    )
+    parser.add_argument(
+        "--cache-stats",
+        action="store_true",
+        help="Show cache hit/miss ratios and task queue stats, then exit",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     configure_logging()
     args = _parse_args()
+
+    # Cache stats mode — display and exit
+    if args.cache_stats:
+        _show_cache_stats()
+        raise SystemExit(0)
+
+    # Sweep mode — run sweeps before (or instead of) the pipeline
+    if args.sweep:
+        sweep_name = None if args.sweep == "__all__" else args.sweep
+        _run_sweep_command(sweep_name)
+
+    # Sweep daemon mode — start background scheduler
+    if args.sweep_daemon:
+        from prospect_engine.scheduler.sweep import start_daemon
+        console.print("[cyan]Starting sweep daemon (background)...[/cyan]")
+        start_daemon()
+
+    # Normal pipeline
     run_pipeline(
         export_formats=args.export,
         dry_run=args.dry_run,

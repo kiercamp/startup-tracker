@@ -17,8 +17,12 @@ from prospect_engine.config import (
     FOUNDED_WITHIN_YEARS,
     OUTREACH_LOOKBACK_DAYS,
     DOD_INNOVATION_PROGRAMS,
-    KNOWN_DEFENSE_PRIMES,
 )
+
+try:
+    from prospect_engine.config import KNOWN_DEFENSE_PRIMES
+except ImportError:
+    KNOWN_DEFENSE_PRIMES: list = []
 from prospect_engine.models.prospect import Prospect
 
 logger = logging.getLogger(__name__)

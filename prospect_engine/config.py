@@ -70,7 +70,7 @@ SBIR_REQUEST_DELAY: float = 65.0  # SBIR allows 10 requests per 10 minutes
 
 # --- Award Amount Floor ---
 MIN_AWARD_AMOUNT: float = 0  # Per CLAUDE.md: "No funding amount minimum"
-USASPENDING_AWARD_UPPER_BOUND: float = 50_000_000  # Cap for startup-focused results
+USASPENDING_AWARD_UPPER_BOUND: float = 0  # Disabled — primes filter handles large companies
 
 # --- Retry Settings ---
 MAX_RETRIES: int = 5

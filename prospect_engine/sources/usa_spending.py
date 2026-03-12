@@ -7,8 +7,8 @@ No authentication required.
 
 from __future__ import annotations
 
+import json
 import logging
-import time
 from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
@@ -18,11 +18,11 @@ from prospect_engine.config import (
     TARGET_NAICS,
     LOOKBACK_YEARS,
     USASPENDING_PAGE_SIZE,
-    USASPENDING_REQUEST_DELAY,
     MIN_AWARD_AMOUNT,
     USASPENDING_AWARD_UPPER_BOUND,
 )
 from prospect_engine.models.prospect import ContractAward, Prospect
+from prospect_engine.utils.cache import get_cache
 from prospect_engine.utils.http import post_with_retry
 
 BASE_URL = "https://api.usaspending.gov/api/v2/search/spending_by_award/"
@@ -61,6 +61,7 @@ def fetch(
     all_raw: List[Dict[str, Any]] = []
     page = 1
     fetch_errors: List[str] = []
+    cache = get_cache()
 
     while True:
         body = _build_request_body(
@@ -72,16 +73,24 @@ def fetch(
             limit=USASPENDING_PAGE_SIZE,
         )
 
-        try:
-            response = post_with_retry(BASE_URL, json=body, timeout=60.0)
-            data = response.json()
-        except Exception as exc:
-            logger.exception("USASpending fetch failed on page %d", page)
-            fetch_errors.append(str(exc)[:120])
-            break
-
-        # Polite delay between requests to avoid 429s
-        time.sleep(USASPENDING_REQUEST_DELAY)
+        # Check cache first
+        cache_key = {"endpoint": "usa_spending", "states": sorted(states),
+                     "start": start_date.isoformat(), "end": end_date.isoformat(),
+                     "page": page}
+        cached = cache.get("usa_spending", cache_key)
+        if cached is not None:
+            data = json.loads(cached)
+        else:
+            try:
+                response = post_with_retry(
+                    BASE_URL, json=body, timeout=60.0, endpoint="usa_spending",
+                )
+                data = response.json()
+                cache.put("usa_spending", cache_key, json.dumps(data))
+            except Exception as exc:
+                logger.exception("USASpending fetch failed on page %d", page)
+                fetch_errors.append(str(exc)[:120])
+                break
 
         results = data.get("results", [])
         if not results:

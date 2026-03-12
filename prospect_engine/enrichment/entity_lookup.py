@@ -8,17 +8,16 @@ Queries the SAM.gov Entity Information API v3 to populate:
 
 from __future__ import annotations
 
+import json
 import logging
-import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from prospect_engine.config import (
     SAM_GOV_API_KEY,
-    SAM_GOV_REQUEST_DELAY,
     SAM_ENTITY_DAILY_BUDGET,
 )
-from prospect_engine.enrichment.company_profile import normalize_company_name
 from prospect_engine.models.prospect import Prospect
+from prospect_engine.utils.cache import get_cache
 from prospect_engine.utils.http import get_with_retry
 
 SAM_ENTITY_URL = "https://api.sam.gov/entity-information/v3/entities"
@@ -51,17 +50,18 @@ def enrich_with_entity_data(
         logger.warning("No SAM.gov API key — skipping entity enrichment")
         return prospects
 
-    requests_made = 0
     enriched_count = 0
+    api_calls = 0
 
     for prospect in prospects:
         if prospect.founded_year is not None:
             continue  # Already enriched
 
-        if requests_made >= budget:
+        # Rate limiter enforces daily cap; manual budget is a soft limit
+        if api_calls >= budget:
             logger.warning(
                 "Entity enrichment budget exhausted (%d/%d) — %d prospects not enriched",
-                requests_made,
+                api_calls,
                 budget,
                 sum(1 for p in prospects if p.founded_year is None),
             )
@@ -73,7 +73,7 @@ def enrich_with_entity_data(
             entity = _lookup_entity_by_uei(prospect.uei, key)
         else:
             entity = _lookup_entity_by_name(prospect.company_name, key)
-        requests_made += 1
+        api_calls += 1
 
         if entity is not None:
             uei, state, founded_year = _extract_entity_fields(entity)
@@ -85,14 +85,13 @@ def enrich_with_entity_data(
             if state and not prospect.state:
                 prospect.state = state
 
-        # Polite delay between requests
-        time.sleep(SAM_GOV_REQUEST_DELAY)
+        # Rate limiter handles pacing — no manual sleep needed
 
     logger.info(
-        "Entity enrichment: %d/%d prospects enriched with founding year (%d API requests)",
+        "Entity enrichment: %d/%d prospects enriched with founding year (%d API calls)",
         enriched_count,
         len(prospects),
-        requests_made,
+        api_calls,
     )
     return prospects
 
@@ -110,6 +109,16 @@ def _lookup_entity_by_uei(
     Returns:
         Entity dict from the response, or None if not found.
     """
+    cache = get_cache()
+    cache_key = {"endpoint": "sam_entity", "uei": uei}
+    cached = cache.get("sam_entity", cache_key)
+    if cached is not None:
+        data = json.loads(cached)
+        entities = data.get("entityData", [])
+        if entities:
+            return entities[0]
+        return None
+
     try:
         response = get_with_retry(
             SAM_ENTITY_URL,
@@ -121,8 +130,10 @@ def _lookup_entity_by_uei(
             },
             timeout=30.0,
             max_retries=1,
+            endpoint="sam_entity",
         )
         data = response.json()
+        cache.put("sam_entity", cache_key, json.dumps(data))
         entities = data.get("entityData", [])
         if entities:
             return entities[0]
@@ -146,6 +157,16 @@ def _lookup_entity_by_name(
     Returns:
         Best-matching entity dict, or None.
     """
+    cache = get_cache()
+    cache_key = {"endpoint": "sam_entity", "name": company_name}
+    cached = cache.get("sam_entity", cache_key)
+    if cached is not None:
+        data = json.loads(cached)
+        entities = data.get("entityData", [])
+        if not entities:
+            return None
+        return _select_best_match(entities, company_name)
+
     try:
         response = get_with_retry(
             SAM_ENTITY_URL,
@@ -157,8 +178,10 @@ def _lookup_entity_by_name(
             },
             timeout=30.0,
             max_retries=1,
+            endpoint="sam_entity",
         )
         data = response.json()
+        cache.put("sam_entity", cache_key, json.dumps(data))
         entities = data.get("entityData", [])
         if not entities:
             return None
@@ -186,6 +209,8 @@ def _select_best_match(
     Returns:
         Best-matching entity dict, or None if no close match.
     """
+    from prospect_engine.enrichment.company_profile import normalize_company_name
+
     target_norm = normalize_company_name(target_name)
     if not target_norm:
         return None

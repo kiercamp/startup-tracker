@@ -6,8 +6,8 @@ filtered by target states and NAICS codes.
 
 from __future__ import annotations
 
+import json
 import logging
-import time
 from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
@@ -18,10 +18,10 @@ from prospect_engine.config import (
     TARGET_NAICS,
     LOOKBACK_YEARS,
     SAM_GOV_PAGE_SIZE,
-    SAM_GOV_REQUEST_DELAY,
     MIN_AWARD_AMOUNT,
 )
 from prospect_engine.models.prospect import ContractAward, Prospect
+from prospect_engine.utils.cache import get_cache
 from prospect_engine.utils.http import get_with_retry
 
 BASE_URL = "https://api.sam.gov/contract-awards/v1/search"
@@ -87,9 +87,7 @@ def fetch(
             logger.exception("SAM.gov fetch failed for state=%s", state)
             fetch_errors.append("{}: {}".format(state, str(exc)[:100]))
 
-        # Cool-down between states to avoid sustained request bursts
-        if idx < len(states) - 1:
-            time.sleep(SAM_GOV_REQUEST_DELAY * 2)
+        # Rate limiter handles inter-request pacing automatically
 
     # If we got zero awards and had errors, surface the failure
     if not all_awards and fetch_errors:
@@ -126,6 +124,7 @@ def _fetch_for_state(
     """
     all_results: List[Dict[str, Any]] = []
     offset = 0
+    cache = get_cache()
 
     while True:
         params = {
@@ -136,11 +135,19 @@ def _fetch_for_state(
             "limit": SAM_GOV_PAGE_SIZE,
             "offset": offset,
         }
-        response = get_with_retry(BASE_URL, params=params, timeout=30.0)
-        data = response.json()
 
-        # Polite delay between requests to avoid 429s
-        time.sleep(SAM_GOV_REQUEST_DELAY)
+        # Check cache first — avoid burning API quota on repeat fetches
+        cache_key = {"endpoint": "sam_gov", "state": state, "naics": naics_tilde,
+                     "date_range": date_range, "offset": offset}
+        cached = cache.get("sam_gov", cache_key)
+        if cached is not None:
+            data = json.loads(cached)
+        else:
+            response = get_with_retry(
+                BASE_URL, params=params, timeout=30.0, endpoint="sam_gov",
+            )
+            data = response.json()
+            cache.put("sam_gov", cache_key, json.dumps(data))
 
         results = data.get("awardSummary", [])
         if not results:

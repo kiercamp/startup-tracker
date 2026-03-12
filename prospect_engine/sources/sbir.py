@@ -6,8 +6,8 @@ State and phase filtering is client-side only.
 
 from __future__ import annotations
 
+import json
 import logging
-import time
 from collections import defaultdict
 from datetime import date
 from typing import Any, Dict, List, Optional
@@ -18,10 +18,10 @@ from prospect_engine.config import (
     TARGET_STATES,
     LOOKBACK_YEARS,
     SBIR_PAGE_SIZE,
-    SBIR_REQUEST_DELAY,
     MIN_AWARD_AMOUNT,
 )
 from prospect_engine.models.prospect import SbirAward, Prospect
+from prospect_engine.utils.cache import get_cache
 from prospect_engine.utils.http import get_with_retry
 
 BASE_URL = "https://api.www.sbir.gov/public/api/awards"
@@ -105,6 +105,7 @@ def _fetch_agency_awards(
     all_results: List[Dict[str, Any]] = []
     year_errors: List[str] = []
     ip_banned = False
+    cache = get_cache()
 
     years = list(range(start_year, end_year + 1))
     for year_idx, year in enumerate(years):
@@ -121,47 +122,52 @@ def _fetch_agency_awards(
                 "start": offset,
             }
 
-            try:
-                # Use max_retries=1 to avoid burning rate limit budget on retries.
-                # SBIR allows only 10 requests per 10 minutes.
-                response = get_with_retry(
-                    BASE_URL, params=params, timeout=30.0, max_retries=1,
-                )
-                data = response.json()
-            except httpx.HTTPStatusError as exc:
-                status = exc.response.status_code
-                if status == 403:
-                    # IP banned — stop ALL requests for this agency immediately
-                    logger.warning(
-                        "SBIR API returned 403 Forbidden for agency=%s — IP banned, "
-                        "stopping all requests for this agency",
-                        agency,
+            # Check cache first
+            cache_key = {"endpoint": "sbir", "agency": agency, "year": year, "offset": offset}
+            cached = cache.get("sbir", cache_key)
+            if cached is not None:
+                data = json.loads(cached)
+            else:
+                try:
+                    # Use max_retries=1 to avoid burning rate limit budget on retries.
+                    # Rate limiter enforces 1 req/6s (10 per 10 minutes).
+                    response = get_with_retry(
+                        BASE_URL, params=params, timeout=30.0, max_retries=1,
+                        endpoint="sbir",
                     )
-                    ip_banned = True
+                    data = response.json()
+                    cache.put("sbir", cache_key, json.dumps(data))
+                except httpx.HTTPStatusError as exc:
+                    status = exc.response.status_code
+                    if status == 403:
+                        # IP banned — stop ALL requests for this agency immediately
+                        logger.warning(
+                            "SBIR API returned 403 Forbidden for agency=%s — IP banned, "
+                            "stopping all requests for this agency",
+                            agency,
+                        )
+                        ip_banned = True
+                        year_errors.append("{}/{}".format(agency, year))
+                        break
+                    logger.warning(
+                        "SBIR API request failed for agency=%s year=%d offset=%d: %s",
+                        agency,
+                        year,
+                        offset,
+                        str(exc)[:80],
+                    )
                     year_errors.append("{}/{}".format(agency, year))
                     break
-                logger.warning(
-                    "SBIR API request failed for agency=%s year=%d offset=%d: %s",
-                    agency,
-                    year,
-                    offset,
-                    str(exc)[:80],
-                )
-                year_errors.append("{}/{}".format(agency, year))
-                break
-            except Exception as exc:
-                logger.warning(
-                    "SBIR API request failed for agency=%s year=%d offset=%d: %s",
-                    agency,
-                    year,
-                    offset,
-                    str(exc)[:80],
-                )
-                year_errors.append("{}/{}".format(agency, year))
-                break
-
-            # Polite delay between requests — 65s ensures <10 requests per 10 minutes
-            time.sleep(SBIR_REQUEST_DELAY)
+                except Exception as exc:
+                    logger.warning(
+                        "SBIR API request failed for agency=%s year=%d offset=%d: %s",
+                        agency,
+                        year,
+                        offset,
+                        str(exc)[:80],
+                    )
+                    year_errors.append("{}/{}".format(agency, year))
+                    break
 
             # API may return a list directly or a dict with results
             if isinstance(data, list):
@@ -180,9 +186,7 @@ def _fetch_agency_awards(
             if len(results) < SBIR_PAGE_SIZE:
                 break
 
-        # Cool-down between years to spread requests
-        if year_idx < len(years) - 1:
-            time.sleep(SBIR_REQUEST_DELAY)
+        # Rate limiter handles inter-request pacing automatically
 
     # If every year failed and we got nothing, raise so outer fetch() sees it
     if not all_results and year_errors:

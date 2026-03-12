@@ -33,8 +33,8 @@ def test_build_request_body():
     assert body["limit"] == 100
     assert body["sort"] == "Start Date"
     assert body["order"] == "desc"
-    # award_amounts filter caps results to startup-sized contracts
-    assert "award_amounts" in body["filters"]
+    # No award_amounts cap — primes filter handles large companies
+    assert "award_amounts" not in body["filters"]
     # internal_id causes HTTP 500 (API bug), must not be in fields
     assert "internal_id" not in body["fields"]
     assert "generated_internal_id" in body["fields"]
