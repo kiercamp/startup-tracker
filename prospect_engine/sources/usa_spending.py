@@ -93,13 +93,16 @@ def fetch(
                 all_raw.append(raw)
 
         page_meta = data.get("page_metadata", {})
-        total_pages = (
-            page_meta.get("total", 0) + USASPENDING_PAGE_SIZE - 1
-        ) // USASPENDING_PAGE_SIZE
-        # Cap pagination — without server-side NAICS filter, result set is large.
-        # 50 pages × 100 results = 5000 awards (top by amount), which is plenty
-        # after client-side NAICS filtering.
-        max_pages = min(total_pages, 50)
+        total = page_meta.get("total") or 0
+        if total > 0:
+            total_pages = (total + USASPENDING_PAGE_SIZE - 1) // USASPENDING_PAGE_SIZE
+        else:
+            # total not provided — keep paginating until empty results
+            total_pages = 999
+
+        # Cap pagination to avoid excessive requests.
+        # 10 pages × 100 results = 1000 awards (top by amount).
+        max_pages = min(total_pages, 10)
         if page >= max_pages:
             break
         page += 1
@@ -110,18 +113,17 @@ def fetch(
             "All USASpending requests failed: {}".format(fetch_errors[0])
         )
 
-    # Client-side NAICS filtering (server-side filter broken, see _build_request_body)
-    naics_set = set(naics_codes)
-    naics_filtered = [a for a in all_awards if a.naics_code in naics_set]
-    naics_raw = [r for r, a in zip(all_raw, all_awards) if a.naics_code in naics_set]
-    all_raw = naics_raw
+    # NOTE: Client-side NAICS filtering removed — the spending_by_award endpoint
+    # does not return NAICS Code data (always None as of March 2026).
+    # Results are already scoped by award_type_codes (contracts) and state,
+    # so all results are government contracts in our target territory.
 
-    filtered = _filter_by_amount(naics_filtered, floor)
+    filtered = _filter_by_amount(all_awards, floor)
     logger.info(
-        "USASpending: fetched %d awards, %d after NAICS filter, %d after amount filter, across %d pages",
+        "USASpending: fetched %d awards, %d after amount filter ($%.0f+), across %d pages",
         len(all_awards),
-        len(naics_filtered),
         len(filtered),
+        floor,
         page,
     )
     return _group_by_recipient(filtered, all_raw)
@@ -151,6 +153,8 @@ def _build_request_body(
     # NOTE: naics_codes filter omitted — USASpending API returns HTTP 500
     # when naics_codes is included (server-side bug as of March 2026).
     # NAICS filtering is done client-side in _parse_result() instead.
+    # NOTE: "internal_id" field also omitted — causes HTTP 500 as of March 2026.
+    # Using "generated_internal_id" instead for award URLs.
     return {
         "filters": {
             "award_type_codes": ["A", "B", "C", "D"],
@@ -167,7 +171,6 @@ def _build_request_body(
             "Awarding Sub Agency",
             "NAICS Code",
             "NAICS Description",
-            "internal_id",
             "generated_internal_id",
         ],
         "page": page,
@@ -203,8 +206,9 @@ def _parse_result(raw: Dict[str, Any]) -> Optional[ContractAward]:
             except (ValueError, TypeError):
                 pass
 
-        # Build source URL from internal award ID
-        internal_id = raw.get("internal_id", "") or raw.get("generated_internal_id", "")
+        # Build source URL from generated internal award ID
+        # (internal_id field causes HTTP 500, so only generated_internal_id is fetched)
+        internal_id = raw.get("generated_internal_id", "")
         source_url = ""
         if internal_id:
             source_url = "https://www.usaspending.gov/award/{}".format(internal_id)

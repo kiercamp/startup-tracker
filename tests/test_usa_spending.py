@@ -32,6 +32,9 @@ def test_build_request_body():
     assert body["page"] == 1
     assert body["limit"] == 100
     assert body["sort"] == "Award Amount"
+    # internal_id causes HTTP 500 (API bug), must not be in fields
+    assert "internal_id" not in body["fields"]
+    assert "generated_internal_id" in body["fields"]
 
 
 def test_parse_result_valid():

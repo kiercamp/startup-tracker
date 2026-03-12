@@ -281,7 +281,7 @@ else:
 filtered = [
     p
     for p in prospects_data
-    if (not selected_states or p.get("state", "") in selected_states)
+    if (not selected_states or not p.get("state") or p.get("state", "") in selected_states)
     and any(s in p.get("data_sources", []) for s in selected_sources)
     and funding_range[0] <= p["total_funding"] <= funding_range[1]
 ]
