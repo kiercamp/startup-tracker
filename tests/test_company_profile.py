@@ -14,6 +14,7 @@ from prospect_engine.enrichment.company_profile import (
     enrich_prospect,
     build_outreach_flags,
     filter_by_founded_year,
+    filter_known_primes,
 )
 
 
@@ -364,3 +365,50 @@ def test_filter_keeps_recent():
     assert "New Corp" in names
     assert "Unknown Corp" in names  # retained (no data to disqualify)
     assert "Old Corp" not in names
+
+
+# --- filter_known_primes ---
+
+
+def test_filter_known_primes_removes_lockheed():
+    """Known primes are filtered out by substring match."""
+    prospects = [
+        Prospect(company_name="LOCKHEED MARTIN CORPORATION"),
+        Prospect(company_name="Desert Defense Inc"),
+    ]
+    filtered = filter_known_primes(prospects)
+    names = {p.company_name for p in filtered}
+    assert "LOCKHEED MARTIN CORPORATION" not in names
+    assert "Desert Defense Inc" in names
+
+
+def test_filter_known_primes_keeps_startups():
+    """Startups not in primes list are retained."""
+    prospects = [
+        Prospect(company_name="SpaceX Innovations LLC"),
+        Prospect(company_name="Rocket Propulsion Inc"),
+    ]
+    filtered = filter_known_primes(prospects)
+    assert len(filtered) == 2
+
+
+def test_filter_known_primes_case_insensitive():
+    """Matching works regardless of case."""
+    prospects = [
+        Prospect(company_name="The Boeing Company"),
+        Prospect(company_name="RAYTHEON COMPANY"),
+    ]
+    filtered = filter_known_primes(prospects)
+    assert len(filtered) == 0
+
+
+def test_filter_known_primes_custom_list():
+    """Custom primes list can be provided."""
+    prospects = [
+        Prospect(company_name="Custom Prime Corp"),
+        Prospect(company_name="Good Startup LLC"),
+    ]
+    filtered = filter_known_primes(prospects, primes_list=["custom prime"])
+    names = {p.company_name for p in filtered}
+    assert "Custom Prime Corp" not in names
+    assert "Good Startup LLC" in names

@@ -66,10 +66,11 @@ SAM_GOV_REQUEST_DELAY: float = 4.0
 USASPENDING_PAGE_SIZE: int = 100
 USASPENDING_REQUEST_DELAY: float = 1.5
 SBIR_PAGE_SIZE: int = 500
-SBIR_REQUEST_DELAY: float = 4.0
+SBIR_REQUEST_DELAY: float = 65.0  # SBIR allows 10 requests per 10 minutes
 
 # --- Award Amount Floor ---
-MIN_AWARD_AMOUNT: float = 1_000_000
+MIN_AWARD_AMOUNT: float = 0  # Per CLAUDE.md: "No funding amount minimum"
+USASPENDING_AWARD_UPPER_BOUND: float = 50_000_000  # Cap for startup-focused results
 
 # --- Retry Settings ---
 MAX_RETRIES: int = 5
@@ -102,3 +103,52 @@ EXISTING_PIPELINE: List[str] = [
     "ITI-RCS",
     "LEAP Space",
 ]
+
+# --- Known Defense Primes (excluded from startup results) ---
+# Substring-matched against normalized company names. These companies are
+# decades old and not startups — filtering them avoids wasting Entity API
+# lookups and keeps the dashboard focused on emerging companies.
+KNOWN_DEFENSE_PRIMES: List[str] = [
+    "lockheed martin",
+    "raytheon",
+    "boeing",
+    "northrop grumman",
+    "general dynamics",
+    "l3harris",
+    "harris corporation",
+    "bae systems",
+    "honeywell",
+    "textron",
+    "bell textron",
+    "bell boeing",
+    "leidos",
+    "saic",
+    "science applications",
+    "kbr",
+    "booz allen",
+    "caci international",
+    "vectrus",
+    "mantech",
+    "united launch services",
+    "los alamos national",
+    "sandia national",
+    "sandia corporation",
+    "mckesson",
+    "triwest healthcare",
+    "general atomics",
+    "aerojet rocketdyne",
+    "rtx corporation",
+    "dell federal",
+    "dell marketing",
+    "fisher sand",
+    "regents of the university",
+    "national technology & engineering solutions",
+    "perspecta",
+    "dyncorp",
+    "jacobs engineering",
+    "parsons corporation",
+    "battelle memorial",
+]
+
+# --- SAM.gov Entity API ---
+SAM_ENTITY_DAILY_BUDGET: int = 800  # Leave headroom under 1,000/day limit

@@ -17,6 +17,7 @@ from prospect_engine.config import (
     FOUNDED_WITHIN_YEARS,
     OUTREACH_LOOKBACK_DAYS,
     DOD_INNOVATION_PROGRAMS,
+    KNOWN_DEFENSE_PRIMES,
 )
 from prospect_engine.models.prospect import Prospect
 
@@ -315,6 +316,42 @@ def _check_innovation_program(
                 "DoD Innovation: {} program detected ({})".format(program, date_str)
             )
             break  # One flag per award
+
+
+def filter_known_primes(
+    prospects: List[Prospect],
+    primes_list: Optional[List[str]] = None,
+) -> List[Prospect]:
+    """Remove prospects matching known large defense prime company names.
+
+    Uses substring matching against normalized company names to catch
+    name variations (e.g. "LOCKHEED MARTIN CORPORATION" and
+    "LOCKHEED MARTIN CORP" both match the fragment "lockheed martin").
+
+    Args:
+        prospects: List of Prospect objects.
+        primes_list: List of lowercase name fragments to exclude.
+            Defaults to KNOWN_DEFENSE_PRIMES from config.
+
+    Returns:
+        Filtered list of Prospect objects with primes removed.
+    """
+    primes = primes_list or KNOWN_DEFENSE_PRIMES
+
+    def _is_prime(prospect: Prospect) -> bool:
+        norm = normalize_company_name(prospect.company_name)
+        return any(fragment in norm for fragment in primes)
+
+    before = len(prospects)
+    result = [p for p in prospects if not _is_prime(p)]
+    removed = before - len(result)
+    if removed:
+        logger.info(
+            "filter_known_primes: removed %d known defense primes, %d remaining",
+            removed,
+            len(result),
+        )
+    return result
 
 
 def filter_by_founded_year(

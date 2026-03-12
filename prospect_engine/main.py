@@ -22,14 +22,16 @@ from prospect_engine.enrichment.company_profile import (
     enrich_prospect,
     build_outreach_flags,
     filter_by_founded_year,
+    filter_known_primes,
 )
+from prospect_engine.enrichment.entity_lookup import enrich_with_entity_data
 from prospect_engine.output.exporter import (
     export_csv,
     export_json,
     export_sqlite,
     export_seed_snapshot,
 )
-from prospect_engine.config import EXISTING_PIPELINE
+from prospect_engine.config import EXISTING_PIPELINE, SAM_GOV_API_KEY
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -123,11 +125,34 @@ def run_pipeline(
     console.print("\n[dim]Merging and enriching...[/dim]")
     prospects = merge_sources(source_results)
 
-    # --- Phase 3: Enrich ---
+    # --- Phase 3: Filter known defense primes ---
+    before = len(prospects)
+    console.print("  [yellow]Removing known defense primes...[/yellow]", end=" ")
+    prospects = filter_known_primes(prospects)
+    console.print(
+        "[green]Removed {} primes, {} remaining[/green]".format(
+            before - len(prospects), len(prospects),
+        )
+    )
+
+    # --- Phase 3.5: SAM.gov Entity API enrichment ---
+    if SAM_GOV_API_KEY:
+        console.print("  [yellow]SAM.gov Entity API enrichment...[/yellow]")
+        enrich_with_entity_data(prospects, api_key=SAM_GOV_API_KEY)
+        enriched = sum(1 for p in prospects if p.founded_year is not None)
+        console.print(
+            "  [green]Enriched {}/{} with founding year[/green]".format(
+                enriched, len(prospects),
+            )
+        )
+    else:
+        console.print("  [dim]Skipping entity enrichment (no SAM.gov API key)[/dim]")
+
+    # --- Phase 4: Enrich ---
     for p in prospects:
         enrich_prospect(p)
 
-    # --- Phase 4: Filter ---
+    # --- Phase 5: Filter by founded year ---
     prospects = filter_by_founded_year(prospects)
 
     # --- Phase 5: Outreach flags ---

@@ -28,13 +28,16 @@ from prospect_engine.config import (  # noqa: E402
     EXISTING_PIPELINE,
     TARGET_STATES,
     SEED_SNAPSHOT_PATH,
+    SAM_GOV_API_KEY,
 )
 from prospect_engine.enrichment.company_profile import (  # noqa: E402
     merge_sources,
     enrich_prospect,
     build_outreach_flags,
     filter_by_founded_year,
+    filter_known_primes,
 )
+from prospect_engine.enrichment.entity_lookup import enrich_with_entity_data  # noqa: E402
 from prospect_engine.sources import sam_gov, usa_spending, sbir  # noqa: E402
 from prospect_engine.utils.logging_setup import configure_logging  # noqa: E402
 
@@ -151,6 +154,9 @@ def _collect_signals(states_list):
         status.append("SBIR: failed ({})".format(str(exc)[:80]))
 
     prospects = merge_sources(source_results)
+    prospects = filter_known_primes(prospects)
+    if SAM_GOV_API_KEY:
+        enrich_with_entity_data(prospects, api_key=SAM_GOV_API_KEY)
     for p in prospects:
         enrich_prospect(p)
     prospects = filter_by_founded_year(prospects)

@@ -20,6 +20,7 @@ from prospect_engine.config import (
     USASPENDING_PAGE_SIZE,
     USASPENDING_REQUEST_DELAY,
     MIN_AWARD_AMOUNT,
+    USASPENDING_AWARD_UPPER_BOUND,
 )
 from prospect_engine.models.prospect import ContractAward, Prospect
 from prospect_engine.utils.http import post_with_retry
@@ -152,15 +153,23 @@ def _build_request_body(
     """
     # NOTE: naics_codes filter omitted — USASpending API returns HTTP 500
     # when naics_codes is included (server-side bug as of March 2026).
-    # NAICS filtering is done client-side in _parse_result() instead.
     # NOTE: "internal_id" field also omitted — causes HTTP 500 as of March 2026.
     # Using "generated_internal_id" instead for award URLs.
+    filters: Dict[str, Any] = {
+        "award_type_codes": ["A", "B", "C", "D"],
+        "recipient_locations": [{"country": "USA", "state": s} for s in states],
+        "time_period": [{"start_date": start_date, "end_date": end_date}],
+    }
+
+    # Cap award amounts to surface startup-sized contracts, not mega-prime deals.
+    # If this causes a 500 (like naics_codes), we fall back to client-side filtering.
+    if USASPENDING_AWARD_UPPER_BOUND > 0:
+        filters["award_amounts"] = [
+            {"lower_bound": 0, "upper_bound": USASPENDING_AWARD_UPPER_BOUND}
+        ]
+
     return {
-        "filters": {
-            "award_type_codes": ["A", "B", "C", "D"],
-            "recipient_locations": [{"country": "USA", "state": s} for s in states],
-            "time_period": [{"start_date": start_date, "end_date": end_date}],
-        },
+        "filters": filters,
         "fields": [
             "Award ID",
             "Recipient Name",
@@ -175,7 +184,7 @@ def _build_request_body(
         ],
         "page": page,
         "limit": limit,
-        "sort": "Award Amount",
+        "sort": "Start Date",
         "order": "desc",
         "subawards": False,
     }

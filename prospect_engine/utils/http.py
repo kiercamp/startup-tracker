@@ -22,12 +22,15 @@ logger = logging.getLogger(__name__)
 def _execute_with_retry(
     request_fn: Callable[[], httpx.Response],
     description: str,
+    max_retries: Optional[int] = None,
 ) -> httpx.Response:
     """Execute an HTTP request with exponential backoff on 429/5xx errors.
 
     Args:
         request_fn: A callable that performs the HTTP request and returns a Response.
         description: Human-readable description for log messages.
+        max_retries: Override for the global MAX_RETRIES setting. Use a lower
+            value for APIs with strict rate limits (e.g. SBIR: max_retries=1).
 
     Returns:
         The successful httpx.Response.
@@ -36,10 +39,11 @@ def _execute_with_retry(
         httpx.HTTPStatusError: If all retries are exhausted on HTTP errors.
         httpx.RequestError: On network-level failures after all retries.
     """
+    retries = max_retries if max_retries is not None else MAX_RETRIES
     backoff = INITIAL_BACKOFF_SECONDS
     last_exception: Optional[Exception] = None
 
-    for attempt in range(MAX_RETRIES + 1):
+    for attempt in range(retries + 1):
         try:
             response = request_fn()
             response.raise_for_status()
@@ -48,7 +52,7 @@ def _execute_with_retry(
             status = exc.response.status_code
             if status == 429 or status >= 500:
                 last_exception = exc
-                if attempt < MAX_RETRIES:
+                if attempt < retries:
                     # Respect Retry-After header if present (common on 429s)
                     retry_after = exc.response.headers.get("Retry-After")
                     if retry_after:
@@ -66,7 +70,7 @@ def _execute_with_retry(
                         description,
                         status,
                         attempt + 1,
-                        MAX_RETRIES + 1,
+                        retries + 1,
                         sleep_time,
                     )
                     time.sleep(sleep_time)
@@ -76,20 +80,20 @@ def _execute_with_retry(
                         "%s: HTTP %d after %d attempts, giving up",
                         description,
                         status,
-                        MAX_RETRIES + 1,
+                        retries + 1,
                     )
                     raise
             else:
                 raise
         except httpx.RequestError as exc:
             last_exception = exc
-            if attempt < MAX_RETRIES:
+            if attempt < retries:
                 sleep_time = min(backoff, MAX_BACKOFF_SECONDS)
                 logger.warning(
                     "%s: Network error on attempt %d/%d (%s), retrying in %.1fs",
                     description,
                     attempt + 1,
-                    MAX_RETRIES + 1,
+                    retries + 1,
                     str(exc),
                     sleep_time,
                 )
@@ -99,12 +103,17 @@ def _execute_with_retry(
                 logger.error(
                     "%s: Network error after %d attempts, giving up",
                     description,
-                    MAX_RETRIES + 1,
+                    retries + 1,
                 )
                 raise
 
     # Should not reach here, but just in case
     raise last_exception  # type: ignore[misc]
+
+
+_DEFAULT_HEADERS = {
+    "User-Agent": "ADProspectEngine/1.0",
+}
 
 
 def get_with_retry(
@@ -113,6 +122,7 @@ def get_with_retry(
     params: Optional[dict] = None,
     headers: Optional[dict] = None,
     timeout: float = 30.0,
+    max_retries: Optional[int] = None,
 ) -> httpx.Response:
     """Perform an HTTP GET with exponential backoff on 429/5xx responses.
 
@@ -121,17 +131,19 @@ def get_with_retry(
         params: Query parameters dict.
         headers: Request headers dict.
         timeout: Per-request timeout in seconds.
+        max_retries: Override for the global MAX_RETRIES (e.g. 1 for SBIR).
 
     Returns:
         The successful httpx.Response object.
     """
     # Redact api_key from log output
     log_url = url.split("?")[0] if "?" in url else url
+    merged_headers = {**_DEFAULT_HEADERS, **(headers or {})}
 
     def _do_request() -> httpx.Response:
-        return httpx.get(url, params=params, headers=headers, timeout=timeout)
+        return httpx.get(url, params=params, headers=merged_headers, timeout=timeout)
 
-    return _execute_with_retry(_do_request, f"GET {log_url}")
+    return _execute_with_retry(_do_request, f"GET {log_url}", max_retries=max_retries)
 
 
 def post_with_retry(
@@ -140,6 +152,7 @@ def post_with_retry(
     json: Optional[dict] = None,
     headers: Optional[dict] = None,
     timeout: float = 30.0,
+    max_retries: Optional[int] = None,
 ) -> httpx.Response:
     """Perform an HTTP POST with exponential backoff on 429/5xx responses.
 
@@ -148,12 +161,14 @@ def post_with_retry(
         json: JSON request body as a dict.
         headers: Request headers dict.
         timeout: Per-request timeout in seconds.
+        max_retries: Override for the global MAX_RETRIES (e.g. 1 for SBIR).
 
     Returns:
         The successful httpx.Response object.
     """
+    merged_headers = {**_DEFAULT_HEADERS, **(headers or {})}
 
     def _do_request() -> httpx.Response:
-        return httpx.post(url, json=json, headers=headers, timeout=timeout)
+        return httpx.post(url, json=json, headers=merged_headers, timeout=timeout)
 
-    return _execute_with_retry(_do_request, f"POST {url}")
+    return _execute_with_retry(_do_request, f"POST {url}", max_retries=max_retries)
