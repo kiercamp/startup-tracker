@@ -23,6 +23,7 @@ from prospect_engine.enrichment.company_profile import (
     build_outreach_flags,
     filter_by_founded_year,
     filter_known_primes,
+    filter_excluded_companies,
 )
 from prospect_engine.enrichment.entity_lookup import enrich_with_entity_data
 from prospect_engine.output.exporter import (
@@ -139,7 +140,7 @@ def run_pipeline(
             logger.error("SBIR fetch failed: %s", exc)
 
     # --- Phase 2: Merge ---
-    console.print("\n[dim]Merging and enriching...[/dim]")
+    console.print("\n[dim]Merging and filtering...[/dim]")
     prospects = merge_sources(source_results)
 
     # --- Phase 3: Filter known defense primes ---
@@ -152,7 +153,21 @@ def run_pipeline(
         )
     )
 
-    # --- Phase 3.5: SAM.gov Entity API enrichment ---
+    # --- Phase 3.5: Filter excluded companies (universities, construction, etc.) ---
+    before = len(prospects)
+    console.print("  [yellow]Removing excluded companies...[/yellow]", end=" ")
+    prospects = filter_excluded_companies(prospects)
+    console.print(
+        "[green]Removed {} excluded, {} remaining[/green]".format(
+            before - len(prospects), len(prospects),
+        )
+    )
+
+    # --- Phase 4: Enrich derived fields ---
+    for p in prospects:
+        enrich_prospect(p)
+
+    # --- Phase 5: SAM.gov Entity API enrichment (after filtering to save API budget) ---
     if SAM_GOV_API_KEY:
         console.print("  [yellow]SAM.gov Entity API enrichment...[/yellow]")
         enrich_with_entity_data(prospects, api_key=SAM_GOV_API_KEY)
@@ -165,14 +180,10 @@ def run_pipeline(
     else:
         console.print("  [dim]Skipping entity enrichment (no SAM.gov API key)[/dim]")
 
-    # --- Phase 4: Enrich ---
-    for p in prospects:
-        enrich_prospect(p)
-
-    # --- Phase 5: Filter by founded year ---
+    # --- Phase 6: Filter by founded year ---
     prospects = filter_by_founded_year(prospects)
 
-    # --- Phase 5: Outreach flags ---
+    # --- Phase 7: Outreach flags ---
     for p in prospects:
         build_outreach_flags(p)
 

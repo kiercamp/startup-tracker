@@ -163,6 +163,30 @@ TARGET_AGENCIES_SAM_GOV: List[str] = [
     "8000",  # NASA
 ]
 
+# --- Excluded Company Patterns ---
+# Substring-matched against normalized company names (lowercase, no punctuation).
+# These are non-aerospace/defense entities that slip through NAICS/agency filtering.
+EXCLUDED_COMPANY_PATTERNS: List[str] = [
+    # Education / research institutions (not startups)
+    "university", "college", "school of mines", "board of regents",
+    "institute of technology",
+    # Construction / heavy civil
+    "construction", "excavat", "paving", "dredge", "roofing",
+    "builders", "concrete", "asphalt",
+    # Telecom / utilities
+    "lumen technologies", "centurylink", "level 3 comm",
+    # Food / hospitality
+    "produce", "food service", "catering", "dining",
+    # Furniture / janitorial / landscaping
+    "furniture", "janitorial", "landscaping", "custodial",
+    # Airlines / transport (not A&D manufacturers)
+    "airlines",
+    # Energy / petroleum (not A&D)
+    "phillips 66",
+    # Laundry / uniform services
+    "alsco", "cintas",
+]
+
 # --- Aerospace/Defense Keyword Filter ---
 # Post-fetch filter: awards matching at least one keyword are retained.
 # Awards with empty descriptions are also retained (benefit of the doubt).

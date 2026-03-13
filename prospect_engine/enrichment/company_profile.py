@@ -23,6 +23,12 @@ try:
     from prospect_engine.config import KNOWN_DEFENSE_PRIMES
 except ImportError:
     KNOWN_DEFENSE_PRIMES: list = []
+
+try:
+    from prospect_engine.config import EXCLUDED_COMPANY_PATTERNS
+except ImportError:
+    EXCLUDED_COMPANY_PATTERNS: list = []
+
 from prospect_engine.models.prospect import Prospect
 
 logger = logging.getLogger(__name__)
@@ -352,6 +358,44 @@ def filter_known_primes(
     if removed:
         logger.info(
             "filter_known_primes: removed %d known defense primes, %d remaining",
+            removed,
+            len(result),
+        )
+    return result
+
+
+def filter_excluded_companies(
+    prospects: List[Prospect],
+    patterns: Optional[List[str]] = None,
+) -> List[Prospect]:
+    """Remove prospects matching excluded company name patterns.
+
+    Uses substring matching against normalized company names to catch
+    universities, construction firms, telecoms, and other non-A&D
+    entities that slip through NAICS and agency filtering.
+
+    Args:
+        prospects: List of Prospect objects.
+        patterns: List of lowercase name fragments to exclude.
+            Defaults to EXCLUDED_COMPANY_PATTERNS from config.
+
+    Returns:
+        Filtered list of Prospect objects with excluded companies removed.
+    """
+    excluded = patterns or EXCLUDED_COMPANY_PATTERNS
+    if not excluded:
+        return prospects
+
+    def _is_excluded(prospect: Prospect) -> bool:
+        norm = normalize_company_name(prospect.company_name)
+        return any(fragment in norm for fragment in excluded)
+
+    before = len(prospects)
+    result = [p for p in prospects if not _is_excluded(p)]
+    removed = before - len(result)
+    if removed:
+        logger.info(
+            "filter_excluded_companies: removed %d excluded companies, %d remaining",
             removed,
             len(result),
         )

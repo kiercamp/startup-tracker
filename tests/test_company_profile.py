@@ -15,6 +15,7 @@ from prospect_engine.enrichment.company_profile import (
     build_outreach_flags,
     filter_by_founded_year,
     filter_known_primes,
+    filter_excluded_companies,
 )
 
 
@@ -412,3 +413,66 @@ def test_filter_known_primes_custom_list():
     names = {p.company_name for p in filtered}
     assert "Custom Prime Corp" not in names
     assert "Good Startup LLC" in names
+
+
+# --- filter_excluded_companies ---
+
+
+def test_filter_excluded_removes_university():
+    prospects = [
+        Prospect(company_name="University of Arizona Research Foundation"),
+        Prospect(company_name="Desert Antenna Systems LLC"),
+    ]
+    filtered = filter_excluded_companies(prospects)
+    names = {p.company_name for p in filtered}
+    assert "Desert Antenna Systems LLC" in names
+    assert "University of Arizona Research Foundation" not in names
+
+
+def test_filter_excluded_removes_construction():
+    prospects = [
+        Prospect(company_name="Cerris Builders Construction Corp"),
+        Prospect(company_name="Acme Aerospace Inc"),
+    ]
+    filtered = filter_excluded_companies(prospects)
+    assert len(filtered) == 1
+    assert filtered[0].company_name == "Acme Aerospace Inc"
+
+
+def test_filter_excluded_removes_telecom():
+    prospects = [
+        Prospect(company_name="Lumen Technologies Services Group"),
+        Prospect(company_name="Level 3 Communications LLC"),
+        Prospect(company_name="Rocket Propulsion LLC"),
+    ]
+    filtered = filter_excluded_companies(prospects)
+    assert len(filtered) == 1
+    assert filtered[0].company_name == "Rocket Propulsion LLC"
+
+
+def test_filter_excluded_keeps_aerospace():
+    prospects = [
+        Prospect(company_name="Tucson Antenna Systems"),
+        Prospect(company_name="Desert Propulsion LLC"),
+        Prospect(company_name="Mesa Satellite Corp"),
+    ]
+    filtered = filter_excluded_companies(prospects)
+    assert len(filtered) == 3  # All kept — none match exclusion patterns
+
+
+def test_filter_excluded_custom_patterns():
+    prospects = [
+        Prospect(company_name="Widget Factory Inc"),
+        Prospect(company_name="Missile Systems Corp"),
+    ]
+    filtered = filter_excluded_companies(prospects, patterns=["widget"])
+    assert len(filtered) == 1
+    assert filtered[0].company_name == "Missile Systems Corp"
+
+
+def test_filter_excluded_empty_patterns_keeps_all():
+    prospects = [
+        Prospect(company_name="Anything Corp"),
+    ]
+    filtered = filter_excluded_companies(prospects, patterns=[])
+    assert len(filtered) == 1

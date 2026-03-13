@@ -5,6 +5,10 @@ from datetime import date
 from prospect_engine.models.prospect import SbirAward
 from prospect_engine.sources.sbir import (
     _parse_award,
+    _parse_csv_row,
+    _resolve_csv_columns,
+    _sbir_award_to_dict,
+    _dict_to_sbir_award,
     _filter_by_territory,
     _filter_by_amount,
     _group_by_firm,
@@ -234,3 +238,226 @@ def test_group_by_firm():
     assert len(acme) == 1
     assert len(acme[0].sbir_awards) == 2
     assert acme[0].uei == "UEI-ACME"
+
+
+# ---------------------------------------------------------------------------
+# Bulk CSV parser tests
+# ---------------------------------------------------------------------------
+
+# Simulated CSV header matching real sbir.gov bulk export
+CSV_HEADER = [
+    "Company", "Award Title", "Agency", "Phase", "Program",
+    "Award Amount", "Award Year", "Proposal Award Date",
+    "City", "Company State", "Abstract", "UEI", "Contract",
+]
+
+SAMPLE_CSV_ROW = {
+    "Company": "Desert Propulsion LLC",
+    "Award Title": "Advanced Solid Rocket Motor Design",
+    "Agency": "Department of Defense",
+    "Phase": "Phase II",
+    "Program": "SBIR",
+    "Award Amount": "749,500",
+    "Award Year": "2024",
+    "Proposal Award Date": "2024-06-15",
+    "City": "Tucson",
+    "Company State": "AZ",
+    "Abstract": "Novel propulsion system for tactical missiles.",
+    "UEI": "DP123456",
+    "Contract": "FA8650-24-C-1234",
+}
+
+
+def test_resolve_csv_columns():
+    col_map = _resolve_csv_columns(CSV_HEADER)
+    assert col_map["firm"] == "Company"
+    assert col_map["state"] == "Company State"
+    assert col_map["award_amount"] == "Award Amount"
+    assert col_map["award_start_date"] == "Proposal Award Date"
+    assert col_map["uei"] == "UEI"
+
+
+def test_resolve_csv_columns_alternate_names():
+    """Headers may use 'State' instead of 'Company State'."""
+    header = list(CSV_HEADER)
+    header[header.index("Company State")] = "State"
+    col_map = _resolve_csv_columns(header)
+    assert col_map["state"] == "State"
+
+
+def test_resolve_csv_columns_proposal_award_date():
+    """Real CSV uses 'Proposal Award Date' — must be resolved."""
+    col_map = _resolve_csv_columns(CSV_HEADER)
+    assert col_map["award_start_date"] == "Proposal Award Date"
+
+
+def test_parse_csv_row_valid():
+    col_map = _resolve_csv_columns(CSV_HEADER)
+    award = _parse_csv_row(
+        SAMPLE_CSV_ROW, col_map,
+        agencies_upper={"DOD", "NASA"},
+        states_upper={"AZ", "TX"},
+        start_year=2020,
+    )
+    assert award is not None
+    assert award.firm == "Desert Propulsion LLC"
+    assert award.agency == "DOD"  # Normalized from "Department of Defense"
+    assert award.phase == "Phase II"
+    assert award.award_amount == 749500.0
+    assert award.award_date == date(2024, 6, 15)
+    assert award.state == "AZ"
+    assert award.uei == "DP123456"
+    assert award.award_id == "FA8650-24-C-1234"
+    assert award.city == "Tucson"
+
+
+def test_parse_csv_row_filters_agency():
+    col_map = _resolve_csv_columns(CSV_HEADER)
+    row = dict(SAMPLE_CSV_ROW, Agency="Department of Health and Human Services")
+    award = _parse_csv_row(
+        row, col_map,
+        agencies_upper={"DOD", "NASA"},
+        states_upper={"AZ"},
+        start_year=2020,
+    )
+    assert award is None
+
+
+def test_parse_csv_row_filters_state():
+    col_map = _resolve_csv_columns(CSV_HEADER)
+    row = dict(SAMPLE_CSV_ROW, **{"Company State": "CA"})
+    award = _parse_csv_row(
+        row, col_map,
+        agencies_upper={"DOD", "NASA"},
+        states_upper={"AZ", "TX"},
+        start_year=2020,
+    )
+    assert award is None
+
+
+def test_parse_csv_row_filters_year():
+    col_map = _resolve_csv_columns(CSV_HEADER)
+    row = dict(SAMPLE_CSV_ROW, **{"Award Year": "2018"})
+    award = _parse_csv_row(
+        row, col_map,
+        agencies_upper={"DOD", "NASA"},
+        states_upper={"AZ"},
+        start_year=2020,
+    )
+    assert award is None
+
+
+def test_parse_csv_row_missing_firm():
+    col_map = _resolve_csv_columns(CSV_HEADER)
+    row = dict(SAMPLE_CSV_ROW, Company="")
+    award = _parse_csv_row(
+        row, col_map,
+        agencies_upper={"DOD", "NASA"},
+        states_upper={"AZ"},
+        start_year=2020,
+    )
+    assert award is None
+
+
+def test_parse_csv_row_dollar_sign_amount():
+    col_map = _resolve_csv_columns(CSV_HEADER)
+    row = dict(SAMPLE_CSV_ROW, **{"Award Amount": "$1,250,000"})
+    award = _parse_csv_row(
+        row, col_map,
+        agencies_upper={"DOD", "NASA"},
+        states_upper={"AZ"},
+        start_year=2020,
+    )
+    assert award is not None
+    assert award.award_amount == 1250000.0
+
+
+def test_parse_csv_row_mm_dd_yyyy_date():
+    col_map = _resolve_csv_columns(CSV_HEADER)
+    row = dict(SAMPLE_CSV_ROW, **{"Proposal Award Date": "06/15/2024"})
+    award = _parse_csv_row(
+        row, col_map,
+        agencies_upper={"DOD", "NASA"},
+        states_upper={"AZ"},
+        start_year=2020,
+    )
+    assert award is not None
+    assert award.award_date == date(2024, 6, 15)
+
+
+def test_parse_csv_row_phase_normalization():
+    col_map = _resolve_csv_columns(CSV_HEADER)
+    row = dict(SAMPLE_CSV_ROW, Phase="1")
+    award = _parse_csv_row(
+        row, col_map,
+        agencies_upper={"DOD", "NASA"},
+        states_upper={"AZ"},
+        start_year=2020,
+    )
+    assert award is not None
+    assert award.phase == "Phase I"
+
+
+def test_parse_csv_row_nasa_agency():
+    """NASA as full name or abbreviation should both work."""
+    col_map = _resolve_csv_columns(CSV_HEADER)
+    row = dict(SAMPLE_CSV_ROW, Agency="National Aeronautics and Space Administration")
+    award = _parse_csv_row(
+        row, col_map,
+        agencies_upper={"DOD", "NASA"},
+        states_upper={"AZ"},
+        start_year=2020,
+    )
+    assert award is not None
+    assert award.agency == "NASA"  # Normalized to code
+
+
+# ---------------------------------------------------------------------------
+# Cache serialization roundtrip
+# ---------------------------------------------------------------------------
+
+
+def test_sbir_award_serialization_roundtrip():
+    original = SbirAward(
+        award_id="RT-001",
+        firm="Roundtrip Corp",
+        agency="DOD",
+        phase="Phase II",
+        program="SBIR",
+        award_title="Test roundtrip",
+        award_amount=500_000,
+        award_date=date(2024, 3, 15),
+        state="AZ",
+        city="Tucson",
+        abstract="Testing serialization.",
+        uei="RT123",
+        source_url="https://sbir.gov/test",
+    )
+    d = _sbir_award_to_dict(original)
+    restored = _dict_to_sbir_award(d)
+    assert restored.award_id == original.award_id
+    assert restored.firm == original.firm
+    assert restored.award_amount == original.award_amount
+    assert restored.award_date == original.award_date
+    assert restored.state == original.state
+    assert restored.uei == original.uei
+
+
+def test_sbir_award_serialization_no_date():
+    original = SbirAward(
+        award_id="RT-002",
+        firm="No Date Corp",
+        agency="NASA",
+        phase="Phase I",
+        program="STTR",
+        award_title="No date test",
+        award_amount=100_000,
+        award_date=None,
+        state="TX",
+        city="Houston",
+    )
+    d = _sbir_award_to_dict(original)
+    assert d["award_date"] is None
+    restored = _dict_to_sbir_award(d)
+    assert restored.award_date is None
+    assert restored.firm == "No Date Corp"

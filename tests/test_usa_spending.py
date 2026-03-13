@@ -39,6 +39,8 @@ def test_build_request_body():
     # internal_id causes HTTP 500 (API bug), must not be in fields
     assert "internal_id" not in body["fields"]
     assert "generated_internal_id" in body["fields"]
+    # Description field must be requested for keyword filtering
+    assert "Description" in body["fields"]
 
 
 def test_parse_result_valid():
@@ -86,6 +88,40 @@ def test_parse_result_bad_date():
     award = _parse_result(raw)
     assert award is not None
     assert award.signed_date is None
+
+
+def test_parse_result_prefers_description_over_naics():
+    """_parse_result should prefer 'Description' field over 'NAICS Description'."""
+    raw = {
+        "Award ID": "W911NF-24-C-0099",
+        "Recipient Name": "Missile Corp",
+        "Start Date": "2024-05-01",
+        "Award Amount": 1000000.0,
+        "Awarding Agency": "Department of Defense",
+        "NAICS Code": "336414",
+        "NAICS Description": "Guided Missile Manufacturing",
+        "Description": "Hypersonic glide vehicle thermal protection system design",
+    }
+    award = _parse_result(raw)
+    assert award is not None
+    assert award.description == "Hypersonic glide vehicle thermal protection system design"
+
+
+def test_parse_result_falls_back_to_naics_description():
+    """When Description is empty, fall back to NAICS Description."""
+    raw = {
+        "Award ID": "W911NF-24-C-0100",
+        "Recipient Name": "Radar Corp",
+        "Start Date": "2024-05-01",
+        "Award Amount": 500000.0,
+        "Awarding Agency": "Department of Defense",
+        "NAICS Code": "334511",
+        "NAICS Description": "Search, Detection, Navigation Instruments",
+        "Description": "",
+    }
+    award = _parse_result(raw)
+    assert award is not None
+    assert award.description == "Search, Detection, Navigation Instruments"
 
 
 def test_parse_result_null_amount():
@@ -197,7 +233,8 @@ def test_filter_by_keywords_no_match_removed():
     assert len(filtered) == 0
 
 
-def test_filter_by_keywords_empty_description_retained():
+def test_filter_by_keywords_empty_description_ad_naics_retained():
+    """Empty description + A&D NAICS code → retained."""
     awards = [
         ContractAward(
             award_id="K-003",
@@ -221,7 +258,43 @@ def test_filter_by_keywords_empty_description_retained():
         ),
     ]
     filtered = _filter_by_keywords(awards)
-    assert len(filtered) == 2  # Both retained — benefit of the doubt
+    assert len(filtered) == 2  # Both retained — A&D NAICS code
+
+
+def test_filter_by_keywords_empty_description_non_ad_naics_removed():
+    """Empty description + non-A&D NAICS code → removed."""
+    awards = [
+        ContractAward(
+            award_id="K-003b",
+            source="usa_spending",
+            recipient_name="Construction Co",
+            awarding_agency="DOD",
+            naics_code="236220",  # Commercial building construction — not A&D
+            signed_date=date(2024, 1, 1),
+            obligation_amount=500_000,
+            description="",
+        ),
+    ]
+    filtered = _filter_by_keywords(awards)
+    assert len(filtered) == 0  # Removed — non-A&D NAICS + empty description
+
+
+def test_filter_by_keywords_empty_description_no_naics_retained():
+    """Empty description + empty NAICS code → retained (benefit of the doubt)."""
+    awards = [
+        ContractAward(
+            award_id="K-003c",
+            source="usa_spending",
+            recipient_name="Unknown NAICS Corp",
+            awarding_agency="NASA",
+            naics_code="",
+            signed_date=date(2024, 1, 1),
+            obligation_amount=200_000,
+            description="",
+        ),
+    ]
+    filtered = _filter_by_keywords(awards)
+    assert len(filtered) == 1  # Retained — no NAICS to disqualify
 
 
 def test_filter_by_keywords_case_insensitive():

@@ -10,6 +10,7 @@ from prospect_engine.config import (
     TARGET_AGENCIES_USASPENDING,
     TARGET_AGENCIES_SAM_GOV,
     AEROSPACE_DEFENSE_KEYWORDS,
+    EXCLUDED_COMPANY_PATTERNS,
 )
 
 
@@ -66,3 +67,18 @@ def test_aerospace_keywords_not_empty():
     assert "radar" in AEROSPACE_DEFENSE_KEYWORDS
     assert "satellite" in AEROSPACE_DEFENSE_KEYWORDS
     assert "sbir" in AEROSPACE_DEFENSE_KEYWORDS
+
+
+def test_excluded_company_patterns_not_empty():
+    assert len(EXCLUDED_COMPANY_PATTERNS) > 5
+
+
+def test_excluded_company_patterns_all_lowercase():
+    for pat in EXCLUDED_COMPANY_PATTERNS:
+        assert pat == pat.lower(), "Pattern '{}' must be lowercase".format(pat)
+
+
+def test_excluded_company_patterns_key_entries():
+    assert "university" in EXCLUDED_COMPANY_PATTERNS
+    assert "construction" in EXCLUDED_COMPANY_PATTERNS
+    assert "landscaping" in EXCLUDED_COMPANY_PATTERNS

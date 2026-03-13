@@ -23,6 +23,10 @@ from prospect_engine.config import (
     TARGET_AGENCIES_USASPENDING,
     AEROSPACE_DEFENSE_KEYWORDS,
 )
+
+# NAICS codes that are inherently A&D-relevant — awards with these codes
+# are retained even when the description field is empty.
+_AD_NAICS_SET = set(TARGET_NAICS)
 from prospect_engine.models.prospect import ContractAward, Prospect
 from prospect_engine.utils.cache import get_cache
 from prospect_engine.utils.http import post_with_retry
@@ -201,6 +205,7 @@ def _build_request_body(
             "Award Amount",
             "Awarding Agency",
             "Awarding Sub Agency",
+            "Description",
             "NAICS Code",
             "NAICS Description",
             "generated_internal_id",
@@ -254,10 +259,10 @@ def _parse_result(raw: Dict[str, Any]) -> Optional[ContractAward]:
             source="usa_spending",
             recipient_name=recipient_name,
             awarding_agency=raw.get("Awarding Agency", ""),
-            naics_code=str(raw.get("NAICS Code", "")),
+            naics_code=str(raw.get("NAICS Code") or ""),
             signed_date=signed_date,
             obligation_amount=obligation,
-            description=raw.get("NAICS Description", ""),
+            description=raw.get("Description", "") or raw.get("NAICS Description", ""),
             source_url=source_url,
         )
     except Exception:
@@ -306,7 +311,10 @@ def _filter_by_keywords(
     def _matches(award: ContractAward) -> bool:
         text = (award.description or "").lower()
         if not text:
-            return True  # No description — retain
+            # No description — retain only if NAICS code is A&D-relevant
+            # (or if NAICS code is also missing/empty, give benefit of the doubt)
+            naics = (award.naics_code or "").strip()
+            return (not naics) or (naics in _AD_NAICS_SET)
         return any(kw in text for kw in keywords)
 
     return [a for a in awards if _matches(a)]
