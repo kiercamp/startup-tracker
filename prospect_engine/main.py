@@ -42,6 +42,7 @@ def run_pipeline(
     export_formats: Optional[List[str]] = None,
     dry_run: bool = False,
     states: Optional[List[str]] = None,
+    skip_sources: Optional[List[str]] = None,
 ) -> List:
     """Execute the full prospect engine pipeline.
 
@@ -72,54 +73,70 @@ def run_pipeline(
 
     source_results = []
     status_messages = []
+    _skip = {s.lower() for s in (skip_sources or [])}
 
     # SAM.gov
-    console.print("  [yellow]SAM.gov[/yellow] contract awards...", end=" ")
-    try:
-        sam_results = sam_gov.fetch(states=states)
-        source_results.append(sam_results)
-        n_awards = sum(len(p.contract_awards) for p in sam_results)
-        msg = "SAM.gov: {} companies, {} awards".format(len(sam_results), n_awards)
-        console.print("[green]{}[/green]".format(msg))
-        status_messages.append(msg)
-    except Exception as exc:
+    if "sam" in _skip:
+        console.print("  [yellow]SAM.gov[/yellow] contract awards... [dim]skipped[/dim]")
         source_results.append([])
-        msg = "SAM.gov: failed ({})".format(str(exc)[:80])
-        console.print("[red]{}[/red]".format(msg))
-        status_messages.append(msg)
-        logger.error("SAM.gov fetch failed: %s", exc)
+        status_messages.append("SAM.gov: skipped (--skip)")
+    else:
+        console.print("  [yellow]SAM.gov[/yellow] contract awards...", end=" ")
+        try:
+            sam_results = sam_gov.fetch(states=states)
+            source_results.append(sam_results)
+            n_awards = sum(len(p.contract_awards) for p in sam_results)
+            msg = "SAM.gov: {} companies, {} awards".format(len(sam_results), n_awards)
+            console.print("[green]{}[/green]".format(msg))
+            status_messages.append(msg)
+        except Exception as exc:
+            source_results.append([])
+            msg = "SAM.gov: failed ({})".format(str(exc)[:80])
+            console.print("[red]{}[/red]".format(msg))
+            status_messages.append(msg)
+            logger.error("SAM.gov fetch failed: %s", exc)
 
     # USASpending
-    console.print("  [yellow]USASpending[/yellow] obligations...", end=" ")
-    try:
-        usa_results = usa_spending.fetch(states=states)
-        source_results.append(usa_results)
-        n_awards = sum(len(p.contract_awards) for p in usa_results)
-        msg = "USASpending: {} companies, {} awards".format(len(usa_results), n_awards)
-        console.print("[green]{}[/green]".format(msg))
-        status_messages.append(msg)
-    except Exception as exc:
+    if "usaspending" in _skip:
+        console.print("  [yellow]USASpending[/yellow] obligations... [dim]skipped[/dim]")
         source_results.append([])
-        msg = "USASpending: failed ({})".format(str(exc)[:80])
-        console.print("[red]{}[/red]".format(msg))
-        status_messages.append(msg)
-        logger.error("USASpending fetch failed: %s", exc)
+        status_messages.append("USASpending: skipped (--skip)")
+    else:
+        console.print("  [yellow]USASpending[/yellow] obligations...", end=" ")
+        try:
+            usa_results = usa_spending.fetch(states=states)
+            source_results.append(usa_results)
+            n_awards = sum(len(p.contract_awards) for p in usa_results)
+            msg = "USASpending: {} companies, {} awards".format(len(usa_results), n_awards)
+            console.print("[green]{}[/green]".format(msg))
+            status_messages.append(msg)
+        except Exception as exc:
+            source_results.append([])
+            msg = "USASpending: failed ({})".format(str(exc)[:80])
+            console.print("[red]{}[/red]".format(msg))
+            status_messages.append(msg)
+            logger.error("USASpending fetch failed: %s", exc)
 
     # SBIR
-    console.print("  [yellow]SBIR/STTR[/yellow] awards...", end=" ")
-    try:
-        sbir_results = sbir.fetch(states=states)
-        source_results.append(sbir_results)
-        n_awards = sum(len(p.sbir_awards) for p in sbir_results)
-        msg = "SBIR: {} companies, {} awards".format(len(sbir_results), n_awards)
-        console.print("[green]{}[/green]".format(msg))
-        status_messages.append(msg)
-    except Exception as exc:
+    if "sbir" in _skip:
+        console.print("  [yellow]SBIR/STTR[/yellow] awards... [dim]skipped[/dim]")
         source_results.append([])
-        msg = "SBIR: failed ({})".format(str(exc)[:80])
-        console.print("[red]{}[/red]".format(msg))
-        status_messages.append(msg)
-        logger.error("SBIR fetch failed: %s", exc)
+        status_messages.append("SBIR: skipped (--skip)")
+    else:
+        console.print("  [yellow]SBIR/STTR[/yellow] awards...", end=" ")
+        try:
+            sbir_results = sbir.fetch(states=states)
+            source_results.append(sbir_results)
+            n_awards = sum(len(p.sbir_awards) for p in sbir_results)
+            msg = "SBIR: {} companies, {} awards".format(len(sbir_results), n_awards)
+            console.print("[green]{}[/green]".format(msg))
+            status_messages.append(msg)
+        except Exception as exc:
+            source_results.append([])
+            msg = "SBIR: failed ({})".format(str(exc)[:80])
+            console.print("[red]{}[/red]".format(msg))
+            status_messages.append(msg)
+            logger.error("SBIR fetch failed: %s", exc)
 
     # --- Phase 2: Merge ---
     console.print("\n[dim]Merging and enriching...[/dim]")
@@ -405,6 +422,13 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Show cache hit/miss ratios and task queue stats, then exit",
     )
+    parser.add_argument(
+        "--skip",
+        nargs="+",
+        choices=["sam", "usaspending", "sbir"],
+        default=[],
+        help="Skip one or more data sources (e.g. --skip sam sbir)",
+    )
     return parser.parse_args()
 
 
@@ -433,4 +457,5 @@ if __name__ == "__main__":
         export_formats=args.export,
         dry_run=args.dry_run,
         states=args.states,
+        skip_sources=args.skip,
     )
