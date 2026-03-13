@@ -20,6 +20,8 @@ from prospect_engine.config import (
     USASPENDING_PAGE_SIZE,
     MIN_AWARD_AMOUNT,
     USASPENDING_AWARD_UPPER_BOUND,
+    TARGET_AGENCIES_USASPENDING,
+    AEROSPACE_DEFENSE_KEYWORDS,
 )
 from prospect_engine.models.prospect import ContractAward, Prospect
 from prospect_engine.utils.cache import get_cache
@@ -34,6 +36,7 @@ def fetch(
     naics_codes: Optional[List[str]] = None,
     lookback_days: Optional[int] = None,
     min_amount: Optional[float] = None,
+    agencies: Optional[List[Dict[str, str]]] = None,
 ) -> List[Prospect]:
     """Fetch contract obligation history from USASpending.gov.
 
@@ -45,6 +48,7 @@ def fetch(
         naics_codes: NAICS codes to filter. Defaults to TARGET_NAICS.
         lookback_days: Days back from today to include. Defaults to LOOKBACK_YEARS * 365.
         min_amount: Minimum award amount in USD. Defaults to MIN_AWARD_AMOUNT.
+        agencies: USASpending agency filter dicts. Defaults to TARGET_AGENCIES_USASPENDING.
 
     Returns:
         List of Prospect objects with contract_awards populated.
@@ -53,6 +57,7 @@ def fetch(
     naics_codes = naics_codes or TARGET_NAICS
     days = lookback_days or (LOOKBACK_YEARS * 365)
     floor = min_amount if min_amount is not None else MIN_AWARD_AMOUNT
+    agencies = agencies if agencies is not None else TARGET_AGENCIES_USASPENDING
 
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
@@ -71,12 +76,14 @@ def fetch(
             end_date=end_date.isoformat(),
             page=page,
             limit=USASPENDING_PAGE_SIZE,
+            agencies=agencies,
         )
 
         # Check cache first
+        agency_names = sorted(a.get("name", "") for a in agencies) if agencies else []
         cache_key = {"endpoint": "usa_spending", "states": sorted(states),
                      "start": start_date.isoformat(), "end": end_date.isoformat(),
-                     "page": page}
+                     "page": page, "agencies": agency_names}
         cached = cache.get("usa_spending", cache_key)
         if cached is not None:
             data = json.loads(cached)
@@ -128,12 +135,13 @@ def fetch(
     # Results are already scoped by award_type_codes (contracts) and state,
     # so all results are government contracts in our target territory.
 
-    filtered = _filter_by_amount(all_awards, floor)
+    amount_filtered = _filter_by_amount(all_awards, floor)
+    filtered = _filter_by_keywords(amount_filtered)
     logger.info(
-        "USASpending: fetched %d awards, %d after amount filter ($%.0f+), across %d pages",
+        "USASpending: %d awards, %d after amount, %d after keywords, %d pages",
         len(all_awards),
+        len(amount_filtered),
         len(filtered),
-        floor,
         page,
     )
     return _group_by_recipient(filtered, all_raw)
@@ -146,6 +154,7 @@ def _build_request_body(
     end_date: str,
     page: int,
     limit: int,
+    agencies: Optional[List[Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     """Build the POST body for the USASpending spending_by_award endpoint.
 
@@ -156,6 +165,7 @@ def _build_request_body(
         end_date: ISO date string "YYYY-MM-DD".
         page: Page number (1-indexed).
         limit: Results per page.
+        agencies: Agency filter dicts for the USASpending "agencies" filter.
 
     Returns:
         Dict ready to serialize as JSON request body.
@@ -176,6 +186,10 @@ def _build_request_body(
         filters["award_amounts"] = [
             {"lower_bound": 0, "upper_bound": USASPENDING_AWARD_UPPER_BOUND}
         ]
+
+    # Filter to target awarding agencies (DoD, NASA)
+    if agencies:
+        filters["agencies"] = agencies
 
     return {
         "filters": filters,
@@ -265,6 +279,37 @@ def _filter_by_amount(
         Filtered list of ContractAward objects.
     """
     return [a for a in awards if a.obligation_amount >= min_amount]
+
+
+def _filter_by_keywords(
+    awards: List[ContractAward],
+    keywords: Optional[List[str]] = None,
+) -> List[ContractAward]:
+    """Filter awards to those with aerospace/defense-relevant descriptions.
+
+    Awards with empty or missing descriptions are retained (benefit of the
+    doubt — the agency filter already scopes to DoD/NASA).
+
+    Args:
+        awards: Parsed ContractAward objects.
+        keywords: Lowercase keyword strings for substring matching.
+            Defaults to AEROSPACE_DEFENSE_KEYWORDS from config.
+
+    Returns:
+        Filtered list of ContractAward objects.
+    """
+    if keywords is None:
+        keywords = AEROSPACE_DEFENSE_KEYWORDS
+    if not keywords:
+        return awards
+
+    def _matches(award: ContractAward) -> bool:
+        text = (award.description or "").lower()
+        if not text:
+            return True  # No description — retain
+        return any(kw in text for kw in keywords)
+
+    return [a for a in awards if _matches(a)]
 
 
 def _group_by_recipient(

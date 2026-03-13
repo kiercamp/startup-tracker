@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 from dotenv import load_dotenv
 
@@ -148,6 +148,48 @@ KNOWN_DEFENSE_PRIMES: List[str] = [
     "jacobs engineering",
     "parsons corporation",
     "battelle memorial",
+]
+
+# --- Target Awarding Agencies ---
+# USASpending uses full toptier agency names in the "agencies" filter.
+TARGET_AGENCIES_USASPENDING: List[Dict[str, str]] = [
+    {"type": "awarding", "tier": "toptier", "name": "Department of Defense"},
+    {"type": "awarding", "tier": "toptier", "name": "National Aeronautics and Space Administration"},
+]
+
+# SAM.gov uses 4-char contractingDepartmentCode values.
+TARGET_AGENCIES_SAM_GOV: List[str] = [
+    "9700",  # Department of Defense (includes Air Force, Army, Navy, Space Force)
+    "8000",  # NASA
+]
+
+# --- Aerospace/Defense Keyword Filter ---
+# Post-fetch filter: awards matching at least one keyword are retained.
+# Awards with empty descriptions are also retained (benefit of the doubt).
+# Case-insensitive substring matching.
+AEROSPACE_DEFENSE_KEYWORDS: List[str] = [
+    # Aerospace & Space
+    "aerospace", "aircraft", "aviation", "satellite", "spacecraft",
+    "space vehicle", "launch vehicle", "rocket", "propulsion", "orbital",
+    "missile", "munition", "unmanned", "uav", "uas", "drone",
+    # Defense & Military
+    "defense", "defence", "military", "weapon", "warfighter", "tactical",
+    "ballistic", "hypersonic", "directed energy", "electronic warfare",
+    # Radar, RF, Antenna
+    "radar", "antenna", "radome", "radio frequency", "rf system",
+    "electromagnetic", "signal processing",
+    # Engineering & Simulation
+    "simulation", "finite element", "structural analysis",
+    "computational fluid", "cfd", "fea", "thermal analysis",
+    "composite", "additive manufacturing", "3d print",
+    # Navigation & Sensors
+    "navigation", "guidance", "detection", "sensor", "lidar",
+    "infrared", "electro-optical",
+    # Systems Engineering
+    "systems engineering", "systems integration", "prototype",
+    "test and evaluation", "research and development", "r&d",
+    # DoD Programs
+    "sbir", "sttr", "afwerx", "spacewerx", "darpa", "afrl", "diu",
 ]
 
 # --- SAM.gov Entity API ---

@@ -8,6 +8,7 @@ from prospect_engine.models.prospect import ContractAward
 from prospect_engine.sources.sam_gov import (
     _parse_award,
     _filter_by_amount,
+    _filter_by_keywords,
     _group_by_recipient,
 )
 
@@ -291,6 +292,162 @@ def test_group_by_recipient():
     assert len(acme) == 1
     assert len(acme[0].contract_awards) == 2
     assert "sam_gov" in acme[0].data_sources
+
+
+class TestFilterByKeywords:
+    """Tests for the keyword-based description filter."""
+
+    def test_matching_description_retained(self):
+        awards = [
+            ContractAward(
+                award_id="K-001",
+                source="sam_gov",
+                recipient_name="Missile Corp",
+                awarding_agency="DOD",
+                naics_code="336414",
+                signed_date=date(2024, 1, 1),
+                obligation_amount=500_000,
+                description="Missile guidance system integration",
+            ),
+        ]
+        filtered = _filter_by_keywords(awards)
+        assert len(filtered) == 1
+
+    def test_non_matching_description_removed(self):
+        awards = [
+            ContractAward(
+                award_id="K-002",
+                source="sam_gov",
+                recipient_name="Catering LLC",
+                awarding_agency="DOD",
+                naics_code="722310",
+                signed_date=date(2024, 1, 1),
+                obligation_amount=75_000,
+                description="Dining facility food service operations",
+            ),
+        ]
+        filtered = _filter_by_keywords(awards)
+        assert len(filtered) == 0
+
+    def test_empty_description_retained(self):
+        awards = [
+            ContractAward(
+                award_id="K-003",
+                source="sam_gov",
+                recipient_name="Unknown Corp",
+                awarding_agency="DOD",
+                naics_code="336414",
+                signed_date=date(2024, 1, 1),
+                obligation_amount=200_000,
+                description="",
+            ),
+        ]
+        filtered = _filter_by_keywords(awards)
+        assert len(filtered) == 1
+
+    def test_none_description_retained(self):
+        awards = [
+            ContractAward(
+                award_id="K-004",
+                source="sam_gov",
+                recipient_name="Null Corp",
+                awarding_agency="DOD",
+                naics_code="336414",
+                signed_date=date(2024, 1, 1),
+                obligation_amount=150_000,
+                description=None,
+            ),
+        ]
+        filtered = _filter_by_keywords(awards)
+        assert len(filtered) == 1
+
+    def test_case_insensitive(self):
+        awards = [
+            ContractAward(
+                award_id="K-005",
+                source="sam_gov",
+                recipient_name="Antenna Inc",
+                awarding_agency="DOD",
+                naics_code="334511",
+                signed_date=date(2024, 1, 1),
+                obligation_amount=300_000,
+                description="ADVANCED ANTENNA ARRAY FOR RADAR APPLICATIONS",
+            ),
+        ]
+        filtered = _filter_by_keywords(awards)
+        assert len(filtered) == 1
+
+    def test_custom_keywords(self):
+        awards = [
+            ContractAward(
+                award_id="K-006",
+                source="sam_gov",
+                recipient_name="Gadget Corp",
+                awarding_agency="DOD",
+                naics_code="336414",
+                signed_date=date(2024, 1, 1),
+                obligation_amount=100_000,
+                description="Custom gadget fabrication",
+            ),
+        ]
+        assert len(_filter_by_keywords(awards, keywords=["gadget"])) == 1
+        assert len(_filter_by_keywords(awards, keywords=["rocket"])) == 0
+
+    def test_empty_keywords_returns_all(self):
+        awards = [
+            ContractAward(
+                award_id="K-007",
+                source="sam_gov",
+                recipient_name="Any Corp",
+                awarding_agency="DOD",
+                naics_code="336414",
+                signed_date=date(2024, 1, 1),
+                obligation_amount=100_000,
+                description="Totally unrelated work",
+            ),
+        ]
+        filtered = _filter_by_keywords(awards, keywords=[])
+        assert len(filtered) == 1
+
+    def test_mixed_awards_filters_correctly(self):
+        awards = [
+            ContractAward(
+                award_id="K-008",
+                source="sam_gov",
+                recipient_name="Space Co",
+                awarding_agency="NASA",
+                naics_code="336414",
+                signed_date=date(2024, 1, 1),
+                obligation_amount=1_000_000,
+                description="Satellite bus assembly and integration",
+            ),
+            ContractAward(
+                award_id="K-009",
+                source="sam_gov",
+                recipient_name="Lawn Co",
+                awarding_agency="DOD",
+                naics_code="561730",
+                signed_date=date(2024, 2, 1),
+                obligation_amount=50_000,
+                description="Landscaping and grounds maintenance services",
+            ),
+            ContractAward(
+                award_id="K-010",
+                source="sam_gov",
+                recipient_name="Blank Co",
+                awarding_agency="DOD",
+                naics_code="336414",
+                signed_date=date(2024, 3, 1),
+                obligation_amount=200_000,
+                description="",
+            ),
+        ]
+        filtered = _filter_by_keywords(awards)
+        assert len(filtered) == 2  # Space Co + Blank Co (no description)
+        names = {a.recipient_name for a in filtered}
+        assert "Space Co" in names
+        assert "Blank Co" in names
+        assert "Lawn Co" not in names
 
 
 def test_fetch_raises_without_api_key(monkeypatch):

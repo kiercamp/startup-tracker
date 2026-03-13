@@ -19,6 +19,8 @@ from prospect_engine.config import (
     LOOKBACK_YEARS,
     SAM_GOV_PAGE_SIZE,
     MIN_AWARD_AMOUNT,
+    TARGET_AGENCIES_SAM_GOV,
+    AEROSPACE_DEFENSE_KEYWORDS,
 )
 from prospect_engine.models.prospect import ContractAward, Prospect
 from prospect_engine.utils.cache import get_cache
@@ -33,6 +35,7 @@ def fetch(
     naics_codes: Optional[List[str]] = None,
     lookback_days: Optional[int] = None,
     min_amount: Optional[float] = None,
+    agency_codes: Optional[List[str]] = None,
 ) -> List[Prospect]:
     """Fetch DoD/NASA contract awards from SAM.gov for target territory and NAICS codes.
 
@@ -44,6 +47,7 @@ def fetch(
         naics_codes: NAICS codes to filter. Defaults to TARGET_NAICS from config.
         lookback_days: Number of days back to search. Defaults to LOOKBACK_YEARS * 365.
         min_amount: Minimum obligation amount in USD. Defaults to MIN_AWARD_AMOUNT.
+        agency_codes: SAM.gov contracting department codes. Defaults to TARGET_AGENCIES_SAM_GOV.
 
     Returns:
         List of Prospect objects, one per unique recipient, with contract_awards populated.
@@ -64,6 +68,7 @@ def fetch(
     naics_codes = naics_codes or TARGET_NAICS
     days = lookback_days or (LOOKBACK_YEARS * 365)
     floor = min_amount if min_amount is not None else MIN_AWARD_AMOUNT
+    agency_codes = agency_codes if agency_codes is not None else TARGET_AGENCIES_SAM_GOV
 
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
@@ -78,7 +83,7 @@ def fetch(
     fetch_errors: List[str] = []
     for idx, state in enumerate(states):
         try:
-            raw_awards = _fetch_for_state(state, naics_tilde, date_range, api_key)
+            raw_awards = _fetch_for_state(state, naics_tilde, date_range, api_key, agency_codes)
             for raw in raw_awards:
                 award = _parse_award(raw)
                 if award is not None:
@@ -95,10 +100,12 @@ def fetch(
             "All SAM.gov requests failed: {}".format("; ".join(fetch_errors))
         )
 
-    filtered = _filter_by_amount(all_awards, floor)
+    amount_filtered = _filter_by_amount(all_awards, floor)
+    filtered = _filter_by_keywords(amount_filtered)
     logger.info(
-        "SAM.gov: fetched %d awards, %d after amount filter, across %d states",
+        "SAM.gov: %d awards, %d after amount, %d after keywords, %d states",
         len(all_awards),
+        len(amount_filtered),
         len(filtered),
         len(states),
     )
@@ -110,6 +117,7 @@ def _fetch_for_state(
     naics_tilde: str,
     date_range: str,
     api_key: str,
+    agency_codes: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Paginate through SAM.gov results for a single state.
 
@@ -118,6 +126,7 @@ def _fetch_for_state(
         naics_tilde: Tilde-separated NAICS code string.
         date_range: Date range string in SAM.gov format.
         api_key: SAM.gov API key.
+        agency_codes: Contracting department codes (e.g. ["9700", "8000"]).
 
     Returns:
         List of raw award dicts from the API response.
@@ -135,10 +144,13 @@ def _fetch_for_state(
             "limit": SAM_GOV_PAGE_SIZE,
             "offset": offset,
         }
+        if agency_codes:
+            params["contractingDepartmentCode"] = "~".join(agency_codes)
 
         # Check cache first — avoid burning API quota on repeat fetches
         cache_key = {"endpoint": "sam_gov", "state": state, "naics": naics_tilde,
-                     "date_range": date_range, "offset": offset}
+                     "date_range": date_range, "offset": offset,
+                     "agency_codes": sorted(agency_codes) if agency_codes else []}
         cached = cache.get("sam_gov", cache_key)
         if cached is not None:
             data = json.loads(cached)
@@ -275,6 +287,37 @@ def _filter_by_amount(
         Filtered list of ContractAward objects.
     """
     return [a for a in awards if a.obligation_amount >= min_amount]
+
+
+def _filter_by_keywords(
+    awards: List[ContractAward],
+    keywords: Optional[List[str]] = None,
+) -> List[ContractAward]:
+    """Filter awards to those with aerospace/defense-relevant descriptions.
+
+    Awards with empty or missing descriptions are retained (benefit of the
+    doubt — the agency filter already scopes to DoD/NASA).
+
+    Args:
+        awards: Parsed ContractAward objects.
+        keywords: Lowercase keyword strings for substring matching.
+            Defaults to AEROSPACE_DEFENSE_KEYWORDS from config.
+
+    Returns:
+        Filtered list of ContractAward objects.
+    """
+    if keywords is None:
+        keywords = AEROSPACE_DEFENSE_KEYWORDS
+    if not keywords:
+        return awards
+
+    def _matches(award: ContractAward) -> bool:
+        text = (award.description or "").lower()
+        if not text:
+            return True  # No description — retain
+        return any(kw in text for kw in keywords)
+
+    return [a for a in awards if _matches(a)]
 
 
 def _group_by_recipient(awards: List[ContractAward]) -> List[Prospect]:

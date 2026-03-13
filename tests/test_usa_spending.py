@@ -7,6 +7,7 @@ from prospect_engine.sources.usa_spending import (
     _build_request_body,
     _parse_result,
     _group_by_recipient,
+    _filter_by_keywords,
 )
 
 
@@ -127,3 +128,154 @@ def test_group_by_recipient():
     assert len(prospects) == 1
     assert len(prospects[0].contract_awards) == 2
     assert "usa_spending" in prospects[0].data_sources
+
+
+def test_build_request_body_with_agencies():
+    agencies = [
+        {"type": "awarding", "tier": "toptier", "name": "Department of Defense"},
+        {"type": "awarding", "tier": "toptier", "name": "National Aeronautics and Space Administration"},
+    ]
+    body = _build_request_body(
+        states=["AZ"],
+        naics_codes=["336414"],
+        start_date="2020-01-01",
+        end_date="2024-12-31",
+        page=1,
+        limit=100,
+        agencies=agencies,
+    )
+    assert "agencies" in body["filters"]
+    assert len(body["filters"]["agencies"]) == 2
+    assert body["filters"]["agencies"][0]["name"] == "Department of Defense"
+
+
+def test_build_request_body_no_agencies():
+    body = _build_request_body(
+        states=["AZ"],
+        naics_codes=["336414"],
+        start_date="2020-01-01",
+        end_date="2024-12-31",
+        page=1,
+        limit=100,
+        agencies=None,
+    )
+    # When agencies=None, no agencies key should appear in filters
+    assert "agencies" not in body["filters"]
+
+
+def test_filter_by_keywords_matches():
+    awards = [
+        ContractAward(
+            award_id="K-001",
+            source="usa_spending",
+            recipient_name="Rocket Corp",
+            awarding_agency="DOD",
+            naics_code="336414",
+            signed_date=date(2024, 1, 1),
+            obligation_amount=500_000,
+            description="Design and manufacture of satellite antenna systems",
+        ),
+    ]
+    filtered = _filter_by_keywords(awards)
+    assert len(filtered) == 1
+
+
+def test_filter_by_keywords_no_match_removed():
+    awards = [
+        ContractAward(
+            award_id="K-002",
+            source="usa_spending",
+            recipient_name="Catering Inc",
+            awarding_agency="DOD",
+            naics_code="722310",
+            signed_date=date(2024, 1, 1),
+            obligation_amount=100_000,
+            description="Food service and cafeteria management for base facilities",
+        ),
+    ]
+    filtered = _filter_by_keywords(awards)
+    assert len(filtered) == 0
+
+
+def test_filter_by_keywords_empty_description_retained():
+    awards = [
+        ContractAward(
+            award_id="K-003",
+            source="usa_spending",
+            recipient_name="Mystery Corp",
+            awarding_agency="NASA",
+            naics_code="336414",
+            signed_date=date(2024, 1, 1),
+            obligation_amount=200_000,
+            description="",
+        ),
+        ContractAward(
+            award_id="K-004",
+            source="usa_spending",
+            recipient_name="Null Desc Corp",
+            awarding_agency="DOD",
+            naics_code="336414",
+            signed_date=date(2024, 3, 1),
+            obligation_amount=300_000,
+            description=None,
+        ),
+    ]
+    filtered = _filter_by_keywords(awards)
+    assert len(filtered) == 2  # Both retained — benefit of the doubt
+
+
+def test_filter_by_keywords_case_insensitive():
+    awards = [
+        ContractAward(
+            award_id="K-005",
+            source="usa_spending",
+            recipient_name="Radar Inc",
+            awarding_agency="DOD",
+            naics_code="334511",
+            signed_date=date(2024, 1, 1),
+            obligation_amount=750_000,
+            description="ADVANCED RADAR DETECTION SYSTEM PROTOTYPE",
+        ),
+    ]
+    filtered = _filter_by_keywords(awards)
+    assert len(filtered) == 1
+
+
+def test_filter_by_keywords_custom_keywords():
+    awards = [
+        ContractAward(
+            award_id="K-006",
+            source="usa_spending",
+            recipient_name="Widget Corp",
+            awarding_agency="DOD",
+            naics_code="336414",
+            signed_date=date(2024, 1, 1),
+            obligation_amount=100_000,
+            description="Widget assembly for test purposes",
+        ),
+    ]
+    # Should match with custom keywords
+    filtered = _filter_by_keywords(awards, keywords=["widget"])
+    assert len(filtered) == 1
+
+    # Should not match with unrelated keywords
+    filtered = _filter_by_keywords(awards, keywords=["satellite", "rocket"])
+    assert len(filtered) == 0
+
+
+def test_filter_by_keywords_empty_list_returns_all():
+    awards = [
+        ContractAward(
+            award_id="K-007",
+            source="usa_spending",
+            recipient_name="Any Corp",
+            awarding_agency="DOD",
+            naics_code="336414",
+            signed_date=date(2024, 1, 1),
+            obligation_amount=100_000,
+            description="Totally unrelated work",
+        ),
+    ]
+    # Empty keywords list means no filtering
+    filtered = _filter_by_keywords(awards, keywords=[])
+    assert len(filtered) == 1

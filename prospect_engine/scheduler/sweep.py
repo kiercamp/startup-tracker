@@ -39,6 +39,8 @@ from prospect_engine.config import (
     TARGET_NAICS,
     LOOKBACK_YEARS,
     MIN_AWARD_AMOUNT,
+    TARGET_AGENCIES_SAM_GOV,
+    TARGET_AGENCIES_USASPENDING,
 )
 from prospect_engine.utils.db import get_connection
 
@@ -319,6 +321,7 @@ def _generate_sam_gov_tasks() -> int:
                 "state": state,
                 "naics_tilde": naics_tilde,
                 "date_range": date_range,
+                "agency_codes": TARGET_AGENCIES_SAM_GOV,
             },
             priority=0,
         )
@@ -340,6 +343,7 @@ def _generate_usa_spending_tasks() -> int:
             "states": TARGET_STATES,
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
+            "agencies": TARGET_AGENCIES_USASPENDING,
         },
         priority=0,
     )
@@ -407,25 +411,31 @@ def _execute_sam_gov_task(params: Dict[str, Any]) -> Dict[str, Any]:
     state = params["state"]
     naics_tilde = params["naics_tilde"]
     date_range = params["date_range"]
+    agency_codes = params.get("agency_codes", [])
 
     cache = get_cache()
     cache_key = {"endpoint": "sam_gov", "state": state, "naics": naics_tilde,
-                 "date_range": date_range, "offset": 0}
+                 "date_range": date_range, "offset": 0,
+                 "agency_codes": sorted(agency_codes) if agency_codes else []}
     cached = cache.get("sam_gov", cache_key)
     if cached is not None:
         return json.loads(cached)
 
     base_url = "https://api.sam.gov/contract-awards/v1/search"
+    request_params = {
+        "api_key": api_key,
+        "awardeeStateCode": state,
+        "naicsCode": naics_tilde,
+        "dateSigned": date_range,
+        "limit": SAM_GOV_PAGE_SIZE,
+        "offset": 0,
+    }
+    if agency_codes:
+        request_params["contractingDepartmentCode"] = "~".join(agency_codes)
+
     response = get_with_retry(
         base_url,
-        params={
-            "api_key": api_key,
-            "awardeeStateCode": state,
-            "naicsCode": naics_tilde,
-            "dateSigned": date_range,
-            "limit": SAM_GOV_PAGE_SIZE,
-            "offset": 0,
-        },
+        params=request_params,
         timeout=30.0,
         endpoint="sam_gov",
     )
@@ -447,10 +457,13 @@ def _execute_usa_spending_task(params: Dict[str, Any]) -> Dict[str, Any]:
     states = params["states"]
     start_date = params["start_date"]
     end_date = params["end_date"]
+    agencies = params.get("agencies", [])
 
     cache = get_cache()
+    agency_names = sorted(a.get("name", "") for a in agencies) if agencies else []
     cache_key = {"endpoint": "usa_spending", "states": sorted(states),
-                 "start": start_date, "end": end_date, "page": 1}
+                 "start": start_date, "end": end_date, "page": 1,
+                 "agencies": agency_names}
     cached = cache.get("usa_spending", cache_key)
     if cached is not None:
         return json.loads(cached)
@@ -465,6 +478,8 @@ def _execute_usa_spending_task(params: Dict[str, Any]) -> Dict[str, Any]:
         filters["award_amounts"] = [
             {"lower_bound": 0, "upper_bound": USASPENDING_AWARD_UPPER_BOUND}
         ]
+    if agencies:
+        filters["agencies"] = agencies
 
     body = {
         "filters": filters,

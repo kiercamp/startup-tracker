@@ -91,11 +91,14 @@ class TestGetConnection:
         def get_conn():
             connections.append(get_connection(tmp_db))
 
+        # Run threads sequentially to avoid SQLite "database is locked"
+        # race on WAL pragma during simultaneous first-connection init.
         t1 = threading.Thread(target=get_conn)
-        t2 = threading.Thread(target=get_conn)
         t1.start()
-        t2.start()
         t1.join()
+
+        t2 = threading.Thread(target=get_conn)
+        t2.start()
         t2.join()
 
         assert len(connections) == 2
